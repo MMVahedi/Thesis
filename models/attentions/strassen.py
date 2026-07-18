@@ -4,7 +4,7 @@ import torch.nn as nn
 from opt_einsum import contract
 
 
-class SmarterAttention(nn.Module):
+class StrassenAttention(nn.Module):
     def __init__(
         self,
         hidden_dim,
@@ -16,7 +16,7 @@ class SmarterAttention(nn.Module):
         device: str = "cpu",
         use_dropout: bool = True,
     ):
-        super(SmarterAttention, self).__init__()
+        super(StrassenAttention, self).__init__()
 
         self.hidden_dim = hidden_dim
         self.num_heads = num_heads
