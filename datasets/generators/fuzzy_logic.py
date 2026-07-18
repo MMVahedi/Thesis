@@ -46,7 +46,7 @@ from typing import List, Tuple
 
 import numpy as np
 
-from dataset.generators.base import DatasetGenerator
+from datasets.generators.base import DatasetGenerator
 
 # A fuzzy-logic example: (inputs, targets, latent).
 #   inputs:  (seq_len, num_variables) float array in [0, 1] — the context/query points.

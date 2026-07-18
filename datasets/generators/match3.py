@@ -21,7 +21,7 @@ from typing import List, Tuple
 
 import numpy as np
 
-from dataset.generators.base import DatasetGenerator
+from datasets.generators.base import DatasetGenerator
 
 # A Match3 example is the (sequence, labels) pair produced by `generate_sequence`
 # and `compute_labels`.
