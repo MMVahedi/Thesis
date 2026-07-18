@@ -1,0 +1,34 @@
+# Byte-compiled / optimized files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Jupyter Notebook
+.ipynb_checkpoints/
+
+# Editors / IDEs
+.vscode/
+.idea/
+
+# Claude Code local (per-user) settings
+.claude/settings.local.json
+
+# macOS
+.DS_Store
+
+# Training / experiment artifacts
+logs/
+wandb/
+checkpoints/
+results/
+outputs/
+*.ckpt
+*.pt
+
+# Generated datasets
+*.jsonl
