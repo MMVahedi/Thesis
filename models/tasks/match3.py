@@ -26,7 +26,7 @@ ATTENTION_CLASSES = {
 def _init_attention_weights(attention: nn.Module) -> None:
     for name, param in attention.named_parameters():
         if "weight" in name:
-            nn.init.xavier_uniform_(param)
+            nn.init.xavier_normal_(param)
         elif "bias" in name:
             nn.init.constant_(param, 0.0)
 
@@ -115,7 +115,7 @@ class TokenClassifier(nn.Module):
 
         for name, param in self.named_parameters():
             if "weight" in name:
-                nn.init.xavier_uniform_(param)
+                nn.init.xavier_normal_(param)
             elif "bias" in name:
                 nn.init.constant_(param, 0.0)
 
