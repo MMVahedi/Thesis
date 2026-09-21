@@ -13,9 +13,9 @@ from typing import Optional
 import torch
 import torch.nn as nn
 
-from models.attentions.standard import StandardAttention
-from models.attentions.strassen import StrassenAttention
-from models.embeddings.match3 import Match3Embedding
+from compgen.models.attentions.standard import StandardAttention
+from compgen.models.attentions.strassen import StrassenAttention
+from compgen.models.embeddings.match3 import Match3Embedding
 
 ATTENTION_CLASSES = {
     "standard": StandardAttention,

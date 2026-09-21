@@ -18,7 +18,7 @@ import torch
 import torch.nn.functional as F
 from torch.utils.data import Dataset
 
-from datasets.generators.base import META_KEY
+from compgen.datasets.generators.base import META_KEY
 
 
 class Match3Dataset(Dataset):

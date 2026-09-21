@@ -6,7 +6,7 @@ a shared-term contrastive loss on final-layer attention representations. The
 Colab notebook sweeps task complexity, dataset size, batch size, and
 contrastive-loss weight with a configurable epoch count.
 
-The source repository at `../../hypernetwork-attention` is not modified.
+The source repository at `../../../hypernetwork-attention` is not modified.
 
 Both the baseline and proposed experiment use the repository's standard
 softmax-attention Transformer:
@@ -34,7 +34,7 @@ pip install -r requirements.txt
 
 Use `colab_fuzzy_logic_attention_contrastive.ipynb` on either Colab or Kaggle.
 It detects the platform and selects the correct writable paths. Create the ZIP
-from the parent `experiments` directory:
+from the parent `compgen/experiments` directory:
 
 ```bash
 zip -r fuzzy_logic_attention_contrastive.zip \

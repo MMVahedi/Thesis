@@ -15,7 +15,7 @@ from typing import List
 import torch
 from torch.utils.data import Dataset
 
-from datasets.generators.base import META_KEY
+from compgen.datasets.generators.base import META_KEY
 
 
 class FuzzyLogicDataset(Dataset):

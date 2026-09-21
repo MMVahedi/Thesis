@@ -5,7 +5,7 @@ from typing import List, Tuple
 
 import numpy as np
 
-from datasets.generators.base import DatasetGenerator
+from compgen.datasets.generators.base import DatasetGenerator
 
 # A fuzzy-logic example: (point, target, latent).
 #   point:  (num_variables,) float array in [0, 1] — the input point.

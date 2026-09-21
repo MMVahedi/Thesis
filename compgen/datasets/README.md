@@ -47,7 +47,7 @@ Example record in the output `.jsonl`:
 import random
 import numpy as np
 
-from datasets.generators.match3 import Match3Config, Match3Generator
+from compgen.datasets.generators.match3 import Match3Config, Match3Generator
 
 random.seed(0)
 np.random.seed(0)
@@ -67,7 +67,7 @@ Match3Generator(config).save("data/match3/train.jsonl")
 ```python
 from torch.utils.data import DataLoader
 
-from datasets.torch_datasets.match3 import Match3Dataset, match3_collate_fn
+from compgen.datasets.torch_datasets.match3 import Match3Dataset, match3_collate_fn
 
 dataset = Match3Dataset("data/match3/train.jsonl")
 loader = DataLoader(dataset, batch_size=64, shuffle=True, collate_fn=match3_collate_fn)
@@ -117,7 +117,7 @@ Example record in the output `.jsonl` (`num_variables=5`, `num_terms=3`):
 ### Generating dataset files
 
 ```python
-from datasets.generators.fuzzy_logic import FuzzyLogicConfig, FuzzyLogicGenerator
+from compgen.datasets.generators.fuzzy_logic import FuzzyLogicConfig, FuzzyLogicGenerator
 
 config = FuzzyLogicConfig(num_instances=50_000, num_variables=5, num_terms=3)
 FuzzyLogicGenerator(config).save("data/fuzzy_logic/train.jsonl")
@@ -128,7 +128,7 @@ FuzzyLogicGenerator(config).save("data/fuzzy_logic/train.jsonl")
 ```python
 from torch.utils.data import DataLoader
 
-from datasets.torch_datasets.fuzzy_logic import FuzzyLogicDataset
+from compgen.datasets.torch_datasets.fuzzy_logic import FuzzyLogicDataset
 
 # Every example has the same num_variables, so no custom collate_fn is
 # needed (unlike Match3's variable-length sequences).

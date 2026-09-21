@@ -32,4 +32,8 @@ outputs/
 *.pt
 
 # Generated datasets
+data/
 *.jsonl
+
+# Build / upload archives
+*.zip

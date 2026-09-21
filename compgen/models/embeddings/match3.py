@@ -8,7 +8,7 @@ to keep magnitudes controlled for a given modulus M), optionally projected to
 `hidden_dim`. This specific feature set is what makes the paper's theoretical
 constructions possible: a token's own value, squared value, and position are
 exactly the ingredients needed to express the triple-sum-mod-M predicate (see
-`dataset/generators/match3.py`) as a bilinear/trilinear attention score.
+`compgen/datasets/generators/match3.py`) as a bilinear/trilinear attention score.
 """
 
 import torch

@@ -5,7 +5,7 @@ from typing import List, Tuple
 
 import numpy as np
 
-from datasets.generators.base import DatasetGenerator
+from compgen.datasets.generators.base import DatasetGenerator
 
 # A Match3 example is the (sequence, labels) pair produced by
 # `Match3Generator.generate_sequence` and `Match3Generator.compute_labels`.
