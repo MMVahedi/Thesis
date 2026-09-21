@@ -2,10 +2,12 @@
 Torch-facing Match3 dataset.
 
 Reads the JSON Lines file produced by `generators/match3.py` (one example per
-line: {"seq": [...], "labels": [...]}) and exposes it as a `torch.utils.data.
-Dataset`, plus a `collate_fn` that pads variable-length sequences to the
-batch's max length. Contains no generation logic — that lives entirely in the
-generator so datasets can be built once and reused across runs.
+line: {"seq": [...], "labels": [...]}, optionally preceded by a
+{"__meta__": ...} header line with the generator's config — see
+`generators/base.py`) and exposes it as a `torch.utils.data.Dataset`, plus a
+`collate_fn` that pads variable-length sequences to the batch's max length.
+Contains no generation logic — that lives entirely in the generator so
+datasets can be built once and reused across runs.
 """
 
 import json
@@ -16,15 +18,23 @@ import torch
 import torch.nn.functional as F
 from torch.utils.data import Dataset
 
+from datasets.generators.base import META_KEY
+
 
 class Match3Dataset(Dataset):
     def __init__(self, path: str):
+        self.meta: dict = {}
         self.examples: List[dict] = []
         with Path(path).open() as f:
             for line in f:
                 line = line.strip()
-                if line:
-                    self.examples.append(json.loads(line))
+                if not line:
+                    continue
+                record = json.loads(line)
+                if META_KEY in record:
+                    self.meta = record[META_KEY]
+                else:
+                    self.examples.append(record)
 
     def __len__(self) -> int:
         return len(self.examples)

@@ -1,0 +1,15 @@
+chex
+datasets
+einops
+flax
+jax[cuda12]
+ml_collections
+matplotlib
+optax
+scikit-learn
+tqdm
+wandb
+tensorflow
+sentencepiece
+tensorflow_datasets
+tensorflow_text

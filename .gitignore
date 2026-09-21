@@ -14,6 +14,7 @@ env/
 # Editors / IDEs
 .vscode/
 .idea/
+.obsidian
 
 # Claude Code local (per-user) settings
 .claude/settings.local.json

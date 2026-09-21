@@ -1,0 +1,9 @@
+chex
+einops
+flax==0.12.9
+matplotlib
+ml_collections
+optax
+scikit-learn
+tqdm
+wandb

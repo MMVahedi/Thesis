@@ -9,6 +9,7 @@ means every task-specific generator (Match3, or future tasks) gets the same
 `.jsonl` output format and `save()` behavior for free.
 """
 
+import dataclasses
 import json
 from abc import ABC, abstractmethod
 from pathlib import Path
@@ -20,6 +21,11 @@ from typing import Generic, Iterator, List, TypeVar
 # Match3) — the base class only needs it to be *some* consistent type.
 Example = TypeVar("Example")
 
+# Key wrapping the dataset-level metadata header line `save()` writes at the
+# top of the output file (see `dataset_meta`). Readers (torch_datasets/*)
+# check for this key to tell the header apart from an example record.
+META_KEY = "__meta__"
+
 
 class DatasetGenerator(ABC, Generic[Example]):
     """
@@ -29,8 +35,15 @@ class DatasetGenerator(ABC, Generic[Example]):
       - `to_record(example)`: convert a single example into a plain
         JSON-serializable dict (e.g. numpy arrays -> lists).
 
-    `save(path)` ties the two together: generate, convert every example to a
-    record, and write one JSON object per line to `path`.
+    Subclasses may also override `meta(example)` to attach optional
+    per-example metadata (e.g. a human-readable description of what was
+    generated) under the record's "meta" key, without cluttering
+    `to_record`'s core fields, and `dataset_meta()` to control the
+    dataset-level metadata (defaults to this generator's config) written as
+    a header line.
+
+    `save(path)` ties these together: generate, write an optional
+    `{"__meta__": ...}` header line, then one JSON object per example.
     """
 
     @abstractmethod
@@ -43,15 +56,42 @@ class DatasetGenerator(ABC, Generic[Example]):
         """Convert one example (as returned by `generate`) into a JSON-serializable dict."""
         raise NotImplementedError
 
+    def meta(self, example: Example) -> dict:
+        """Optional per-example metadata to attach under the record's "meta" key. Empty by default."""
+        return {}
+
+    def dataset_meta(self) -> dict:
+        """
+        Optional dataset-level metadata saved as the output's header line
+        (see `save`). Defaults to this generator's `self.config`, if it has
+        one and it's a dataclass, so every generator's config is recorded
+        for free; override to customize or suppress it.
+        """
+        config = getattr(self, "config", None)
+        if config is not None and dataclasses.is_dataclass(config):
+            return dataclasses.asdict(config)
+        return {}
+
     def to_records(self, examples: List[Example]) -> Iterator[dict]:
         for example in examples:
-            yield self.to_record(example)
+            record = self.to_record(example)
+            meta = self.meta(example)
+            if meta:
+                record["meta"] = meta
+            yield record
 
     def save(self, path: str) -> None:
-        """Generate examples and write them to `path` as JSON Lines."""
+        """
+        Generate examples and write them to `path` as JSON Lines: an
+        optional `{"__meta__": ...}` header line (see `dataset_meta`)
+        followed by one JSON object per example.
+        """
         out_path = Path(path)
         out_path.parent.mkdir(parents=True, exist_ok=True)
         examples = self.generate()
         with out_path.open("w") as f:
+            meta = self.dataset_meta()
+            if meta:
+                f.write(json.dumps({META_KEY: meta}) + "\n")
             for record in self.to_records(examples):
                 f.write(json.dumps(record) + "\n")

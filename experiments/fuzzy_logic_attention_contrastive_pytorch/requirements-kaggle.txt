@@ -1,0 +1,6 @@
+# Kaggle already supplies CUDA-enabled torch; do not reinstall or upgrade it.
+numpy
+pandas
+matplotlib
+scikit-learn
+tqdm

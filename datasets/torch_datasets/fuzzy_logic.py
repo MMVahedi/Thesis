@@ -1,15 +1,11 @@
 """
 Torch-facing fuzzy logic dataset.
 
-Reads the JSON Lines file produced by `generators/fuzzy_logic.py` (one example
-per line: {"inputs": ..., "targets": ..., "latent": ...}) and exposes it in
-the masked in-context-learning format used by the paper: the model sees a
-sequence of (input, target) pairs with the LAST target hidden (set to 0), and
-must predict it.
-
-Every example has the same seq_len/num_variables (fixed by the generator's
-config), so — unlike Match3 — there is no padding to do, and no custom
-collate_fn: the default DataLoader collation stacks examples directly.
+Reads the JSON Lines file produced by `generators/fuzzy_logic.py` (one
+example per line: {"input": ..., "target": ..., "latent": ...}, optionally
+preceded by a {"__meta__": ...} header line with the generator's config —
+see `generators/base.py`) and exposes each as a single (input, target) pair
+— a plain supervised example, not an in-context sequence.
 """
 
 import json
@@ -19,32 +15,31 @@ from typing import List
 import torch
 from torch.utils.data import Dataset
 
+from datasets.generators.base import META_KEY
+
 
 class FuzzyLogicDataset(Dataset):
     def __init__(self, path: str):
+        self.meta: dict = {}
         self.examples: List[dict] = []
         with Path(path).open() as f:
             for line in f:
                 line = line.strip()
-                if line:
-                    self.examples.append(json.loads(line))
+                if not line:
+                    continue
+                record = json.loads(line)
+                if META_KEY in record:
+                    self.meta = record[META_KEY]
+                else:
+                    self.examples.append(record)
 
     def __len__(self) -> int:
         return len(self.examples)
 
     def __getitem__(self, idx: int) -> dict:
         record = self.examples[idx]
-        inputs = torch.tensor(record["inputs"], dtype=torch.float32)  # (seq_len, num_variables)
-        targets = torch.tensor(record["targets"], dtype=torch.float32).unsqueeze(-1)  # (seq_len, 1)
-        latent = torch.tensor(record["latent"], dtype=torch.float32)  # (num_terms, num_variables)
-
-        # One ICL "token" per step is (input, target-so-far); hide the final
-        # (query) target since that's what the model has to predict.
-        x = torch.cat([inputs, targets], dim=-1)
-        x[-1, -1] = 0.0
-
         return {
-            "x": x,
-            "y": targets[-1],
-            "latent": latent,
+            "x": torch.tensor(record["input"], dtype=torch.float32),  # (num_variables,)
+            "y": torch.tensor(record["target"], dtype=torch.float32),  # scalar
+            "latent": torch.tensor(record["latent"], dtype=torch.float32),  # (num_terms, num_variables)
         }

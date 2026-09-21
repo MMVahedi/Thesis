@@ -75,34 +75,35 @@ loader = DataLoader(dataset, batch_size=64, shuffle=True, collate_fn=match3_coll
 
 ## Fuzzy Logic
 
-**Task** (from "Attention as a Hypernetwork"): an in-context-learning (ICL)
-task, not a classification task like Match3. Each example is one "concept" —
-a fuzzy DNF formula over `num_variables` boolean variables, built by OR-ing
-together `num_terms` distinct *minterms* (maximal conjunctions using every
-variable, e.g. `x1 AND NOT x2 AND x3`) — shown as a sequence of `seq_len`
-`(input, output)` pairs, with the final output hidden. The model has to infer
-the concept from the visible pairs and predict the hidden output for the
-last (query) input. Inputs are continuous, in `[0, 1]^num_variables`; the
-formula is evaluated with Zadeh fuzzy logic (`NOT(x) = 1 - x`, `AND = min`,
-`OR = max`), so the target is a continuous truth value in `[0, 1]`, not a
-hard boolean.
+**Task** (adapted from "Attention as a Hypernetwork"): a plain supervised
+regression task, not a classification task like Match3. Each example is a
+single `(input, target)` pair for one "concept" — a fuzzy DNF formula over
+`num_variables` boolean variables, built by OR-ing together `num_terms`
+distinct *minterms* (maximal conjunctions using every variable, e.g. `x1 AND
+NOT x2 AND x3`). The input is a continuous point in `[0, 1]^num_variables`;
+the formula is evaluated at that point with Zadeh fuzzy logic (`NOT(x) = 1 -
+x`, `AND = min`, `OR = max`), so the target is a continuous truth value in
+`[0, 1]`, not a hard boolean. Each example draws its own formula (uniformly
+at random from all `2**num_variables` possible minterms) and its own input
+point independently — there's no shared context between examples, and the
+generator does no train/test/ood partitioning; that's left to whoever
+consumes the generated data (e.g. by generating separate files with
+different `num_instances`, or splitting a generated file afterward).
 
-To test generalization, the `2**num_variables` minterms are split into an
-in-distribution pool and an out-of-distribution pool (`frac_ood_conj`).
-"train"/"test" formulas are disjoint combinations of `num_terms` minterms
-drawn only from the in-distribution pool (`frac_test` controls that split);
-"ood" formulas are drawn only from the out-of-distribution pool, so the
-model never saw those minterms during training at all. This partition is a
-deterministic function of `(num_variables, num_terms, frac_test,
-frac_ood_conj, seed)`, so constructing a `train`, `test`, and `ood` generator
-with those five fields matching always agrees on the same partition —
-that's what makes it safe to save each split to its own file independently.
+Each record also carries a `meta` field with a human-readable rendering of
+every term in the formula (e.g. `"x_1^not(x_2)^x_3"` for a term that's
+`x1 AND NOT x2 AND x3`) — handy for debugging/inspection, not used in
+training.
 
-Example record in the output `.jsonl` (`num_variables=5`, `num_terms=3`,
-`seq_len=16`):
+Example record in the output `.jsonl` (`num_variables=5`, `num_terms=3`):
 
 ```json
-{"inputs": [[0.1, 0.9, ...], ...], "targets": [0.4, 0.8, ...], "latent": [[1, 0, 1, 0, 1], ...]}
+{
+  "input": [0.1, 0.9, 0.4, 0.2, 0.7],
+  "target": 0.4,
+  "latent": [[1, 0, 1, 0, 1], ...],
+  "meta": {"term1": "x_1^not(x_2)^x_3^not(x_4)^x_5", "term2": "...", "term3": "..."}
+}
 ```
 
 ### Parameters (`generators/fuzzy_logic.py:FuzzyLogicConfig`)
@@ -110,34 +111,16 @@ Example record in the output `.jsonl` (`num_variables=5`, `num_terms=3`,
 | Parameter | Default | Description |
 |---|---|---|
 | `num_instances` | required | Total number of examples the generated dataset should contain. |
-| `seq_len` | required | Number of `(input, output)` pairs per example: context pairs plus the 1 hidden query. |
 | `num_variables` | required | Number of boolean variables a formula is defined over. |
 | `num_terms` | required | Number of minterms OR'd together to form one formula. |
-| `split` | `"train"` | Which formula pool to draw from: `"train"`, `"test"`, or `"ood"`. |
-| `frac_test` | `0.5` | Fraction of in-distribution formulas held out for `"test"`. |
-| `frac_ood_conj` | `0.25` | Fraction of minterms held out entirely for `"ood"`. |
-| `seed` | `0` | Fixes the train/test/ood partition (must match across split generators, see above). |
 
 ### Generating dataset files
 
 ```python
-import random
-import numpy as np
-
 from datasets.generators.fuzzy_logic import FuzzyLogicConfig, FuzzyLogicGenerator
 
-# Shared across splits so they all agree on the same train/test/ood partition.
-common = dict(num_variables=5, num_terms=3, frac_test=0.5, frac_ood_conj=0.25, seed=0)
-
-for split, num_instances, path in [
-    ("train", 50_000, "data/fuzzy_logic/train.jsonl"),
-    ("test", 5_000, "data/fuzzy_logic/test.jsonl"),
-    ("ood", 5_000, "data/fuzzy_logic/ood.jsonl"),
-]:
-    random.seed(0)
-    np.random.seed(0)
-    config = FuzzyLogicConfig(num_instances=num_instances, seq_len=16, split=split, **common)
-    FuzzyLogicGenerator(config).save(path)
+config = FuzzyLogicConfig(num_instances=50_000, num_variables=5, num_terms=3)
+FuzzyLogicGenerator(config).save("data/fuzzy_logic/train.jsonl")
 ```
 
 ### Loading it for training
@@ -147,8 +130,8 @@ from torch.utils.data import DataLoader
 
 from datasets.torch_datasets.fuzzy_logic import FuzzyLogicDataset
 
-# Every example has the same seq_len/num_variables, so no custom collate_fn
-# is needed (unlike Match3's variable-length sequences).
+# Every example has the same num_variables, so no custom collate_fn is
+# needed (unlike Match3's variable-length sequences).
 dataset = FuzzyLogicDataset("data/fuzzy_logic/train.jsonl")
 loader = DataLoader(dataset, batch_size=64, shuffle=True)
 ```
