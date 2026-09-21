@@ -2,10 +2,15 @@
 
 Thesis research workspace on attention/contrastive learning for compositional generalization. Not a software product: no build system, CI, linters, or test suite. Also an Obsidian vault (`.obsidian/`, gitignored).
 
+## Frameworks
+
+- All implementation in this project uses PyTorch — do not introduce JAX, TensorFlow, or any other deep-learning framework in library code, notebooks, or new experiments.
+- The existing JAX experiment suite `compgen/experiments/fuzzy_logic_attention_contrastive/` is grandfathered: keep it working, but do not extend it with new JAX code; new experiment work goes through `compgen/experiments/fuzzy_logic_attention_contrastive_pytorch/` or new PyTorch dirs.
+
 ## Layout
 
 - `compgen/` — the single code package; all runnable code lives under it, imported as `compgen.*`.
-  - `compgen/models/` — PyTorch attention variants in `compgen/models/attentions/` (`standard`, `strassen`, `triangular`, `third_order`), plus `compgen/models/embeddings/match3.py` and `compgen/models/tasks/match3.py` (Match3 classifier reproducing the strassen-attention-neurips25 config: M=37, hidden_dim=128, 1 layer, 2 heads, dropout 0.4, no LayerNorm).
+  - `compgen/models/` — PyTorch attention variants in `compgen/models/attentions/` (`standard`, `strassen`, `triangular`, `third_order`) with the shared name→class registry in `compgen/models/attentions/__init__.py` (`ATTENTION_CLASSES`; triangular is pair-level `(B, N, N, C)` — not sequence-composable), task-agnostic scaffolding in `compgen/models/encoder.py` (`EncoderLayer`) and `compgen/models/heads.py` (`TokenClassifier`), and task models as thin glue: a per-task embedding in `compgen/models/embeddings/<task>.py` plus a per-task composition in `compgen/models/tasks/<task>.py` (currently `match3.py` — Match3 classifier reproducing the strassen-attention-neurips25 config: M=37, hidden_dim=128, 1 layer, 2 heads, dropout 0.4, no LayerNorm). Adding a task = one `embeddings/<task>.py` + one thin `tasks/<task>.py`; adding an architecture = one `attentions/<arch>.py` + one `ATTENTION_CLASSES` entry.
   - `compgen/datasets/` — two-layer split: `compgen/datasets/generators/` (pure, torch-free; writes `.jsonl`) and `compgen/datasets/torch_datasets/` (reads `.jsonl` → `torch.utils.data.Dataset` + collate_fn). See `compgen/datasets/README.md` for task specs and usage examples.
   - `compgen/experiments/` — two self-contained experiment dirs (`fuzzy_logic_attention_contrastive` [JAX], `fuzzy_logic_attention_contrastive_pytorch` [PyTorch]), each with its own README (the executable source of truth for running them) and requirements files.
 - `notebooks/` — Match3 experiments comparing Strassen vs. standard attention; import `compgen.models`/`compgen.datasets`.
@@ -18,6 +23,7 @@ Thesis research workspace on attention/contrastive learning for compositional ge
 - Imports are package-prefixed (`from compgen.models.attentions.strassen import ...`, `from compgen.datasets.generators.match3 import ...`). Run scripts/notebooks with the repo root on `sys.path` (e.g. `python` from the root, or add `sys.path.append("..")` in notebooks). There is no installed package.
 - Running from the repo root no longer shadows HuggingFace's `datasets`: there is no top-level `datasets/` directory, so `import datasets` resolves to the installed package if present; local code is only reachable as `compgen.datasets`.
 - No root requirements file; notebooks/experiments assume `torch`, `numpy`, `opt_einsum`, `pandas`, `scikit-learn`, `matplotlib` are available. Python 3.14 is in use (`__pycache__`).
+- Development environment: the local machine has **no GPU and no PyTorch install**. Code is written here; torch-dependent code is executed and tested on the GPU server (or Colab/Kaggle for notebooks). Local verification is best-effort CPU-only (e.g. a temporary venv); never block implementation on torch/GPU-dependent tests — run those when on the GPU server.
 - Attention classes default to `torch.float64` and use `opt_einsum.contract` for the higher-order score contractions.
 - Only self-check: `python self_test.py` inside `compgen/experiments/fuzzy_logic_attention_contrastive_pytorch/`.
 

@@ -13,7 +13,7 @@ Two prongs share one library, `compgen/`:
 
 | Path | Contents |
 |---|---|
-| `compgen/models/` | Attention variants (`attentions/`), Match3 embedding (`embeddings/`), Match3 classifier (`tasks/`) |
+| `compgen/models/` | Attention architectures (`attentions/` + shared `ATTENTION_CLASSES` registry), task-agnostic scaffolding (`encoder.py`, `heads.py`), and task models as thin glue (`embeddings/<task>.py` + `tasks/<task>.py`) |
 | `compgen/datasets/` | Dataset generators (`generators/`, torch-free, write `.jsonl`) and PyTorch datasets (`torch_datasets/`); see `compgen/datasets/README.md` for task specs and usage examples |
 | `compgen/experiments/` | Self-contained experiment suites (JAX + PyTorch) with their own READMEs, requirements, and notebooks — they import nothing from the rest of the repo |
 | `notebooks/` | Match3 notebooks comparing Strassen vs. standard attention |
