@@ -8,7 +8,7 @@ Defines the contract for the project's local runtime environment: one pinned roo
 
 ### Requirement: Single pinned runtime manifest
 
-The repository SHALL provide one root dependency manifest that lists every direct runtime dependency needed by the code package, the notebooks, and the PyTorch experiment, with exact version pins using `==`. The manifest SHALL pin `torch` to the exact CUDA build present in the local environment and SHALL declare the package index required to resolve that build. Dependencies belonging only to the isolated JAX experiment SHALL NOT appear in the root manifest.
+The repository SHALL provide one root dependency manifest that lists every direct runtime dependency needed by the code package, the notebooks, and the retained PyTorch experiment, with exact version pins using `==`. The manifest SHALL pin `torch` to the exact CUDA build present in the local environment and SHALL declare the package index required to resolve that build. The JAX experiment's former stack SHALL NOT appear in the root manifest.
 
 #### Scenario: Direct dependencies are present and exactly pinned
 - **WHEN** the root manifest is inspected
@@ -50,14 +50,14 @@ The pinned manifest SHALL install into the local virtual environment without cha
 - **WHEN** the Python and torch versions stated in `AGENTS.md` are compared with the manifest and the local environment
 - **THEN** they agree
 
-### Requirement: Experiment isolation is preserved
+### Requirement: Experiment dependencies stay isolated
 
-The root manifest SHALL NOT become a dependency of the isolated experiment directories and SHALL NOT alter their existing requirements files. Each experiment SHALL remain independently runnable from its own directory and its own declared dependencies.
+The root manifest SHALL NOT become a dependency of the retained experiment directory and SHALL NOT alter its existing requirements files. The experiment SHALL remain independently runnable from its own directory and its own declared dependencies.
 
 #### Scenario: Existing experiment requirements are untouched
-- **WHEN** the requirements files inside each experiment directory are inspected after this change
+- **WHEN** the requirements files inside the retained experiment directory are inspected after this change
 - **THEN** their contents are unchanged by this change
 
-#### Scenario: JAX experiment stays self-contained
-- **WHEN** the JAX experiment's requirements file is inspected
+#### Scenario: Retained experiment ships its own requirements
+- **WHEN** the retained experiment's requirements file is inspected
 - **THEN** it still declares its own full stack and the experiment does not rely on the root manifest to run

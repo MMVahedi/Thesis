@@ -37,3 +37,28 @@ class TokenClassifier(nn.Module):
         x = self.activation(self.dense(x))
         x = self.dropout(x)
         return self.out_proj(x)
+
+
+class RegressionHead(nn.Module):
+    """Per-token scalar regression head: LayerNorm -> Dropout -> Linear(hidden, 1).
+
+    Mirrors the reference fuzzy-logic transformer's final normalization followed
+    by a scalar output projection. Task-agnostic: it maps any
+    `(batch, length, hidden)` hidden state to `(batch, length, 1)`.
+    """
+
+    def __init__(
+        self,
+        hidden_dim: int,
+        eps: float = 1e-6,
+        dropout_rate: float = 0.0,
+        dtype: torch.dtype = torch.float64,
+        device: str = "cpu",
+    ):
+        super().__init__()
+        self.norm = nn.LayerNorm(hidden_dim, eps=eps, dtype=dtype, device=device)
+        self.dropout = nn.Dropout(dropout_rate)
+        self.out_proj = nn.Linear(hidden_dim, 1, dtype=dtype, device=device)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.out_proj(self.dropout(self.norm(x)))

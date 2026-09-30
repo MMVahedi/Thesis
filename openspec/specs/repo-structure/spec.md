@@ -7,19 +7,19 @@ Defines the organizing contract of the thesis workspace: one code package, a pre
 ## Requirements
 
 ### Requirement: Single top-level code package
-All runnable library code (attention models, embeddings, tasks, dataset generators, torch datasets) SHALL live under exactly one top-level Python package, the experiment suites SHALL live under `experiments/` within that package (`compgen/experiments/`), and the repository root SHALL NOT contain top-level `models/`, `datasets/`, or `experiments/` code directories. As a result, running Python from the repository root SHALL NOT shadow any identically named installed third-party package (notably HuggingFace `datasets`).
+All runnable library code (attention models, embeddings, tasks, dataset generators, torch datasets, losses) SHALL live under exactly one top-level Python package, the experiment suite SHALL live under `experiments/` within that package (`compgen/experiments/`), and the repository root SHALL NOT contain top-level `models/`, `datasets/`, `losses/`, or `experiments/` code directories. As a result, running Python from the repository root SHALL NOT shadow any identically named installed third-party package (notably HuggingFace `datasets`).
 
 #### Scenario: Root run resolves third-party datasets
 - **WHEN** a process is started from the repository root and `import datasets` executes in an environment where HuggingFace `datasets` is installed
 - **THEN** the installed HuggingFace package is imported, not any local code
 
 #### Scenario: All library modules reachable through the package
-- **WHEN** every public module formerly under `models/` and `datasets/` is imported via the new package prefix (e.g. `compgen.models.attentions.standard`, `compgen.datasets.generators.match3`) from the repository root
+- **WHEN** every public module formerly under `models/` and `datasets/` is imported via the new package prefix (e.g. `compgen.models.attentions.softmax`, `compgen.datasets.generators.match3`) from the repository root
 - **THEN** all imports succeed without a top-level `models/` or `datasets/` directory existing at the root
 
 #### Scenario: Experiments relocated under the package
 - **WHEN** the repository root is listed after the reorganization
-- **THEN** no `experiments/` directory exists at the root and both experiment directories are found at `compgen/experiments/` with unchanged internal content
+- **THEN** no `experiments/` directory exists at the root, the retained experiment is found at `compgen/experiments/fuzzy_logic_attention_contrastive_pytorch/`, and no JAX experiment directory exists
 
 ### Requirement: Import discipline
 Python files, notebooks, and usage documentation SHALL import local code exclusively through the top-level package prefix (`compgen.*`); no old-style top-level imports (`from models...`, `from datasets...`) or references describing them SHALL remain anywhere in the repository.
@@ -43,23 +43,23 @@ Repository content SHALL be organized by kind at fixed locations: runnable code 
 - **WHEN** each of `notes/`, `documents/`, `papers/`, `presentations/` is listed
 - **THEN** its contents match its kind (notes are markdown research notes; documents are thesis-authored PDFs; papers are literature; presentations are slides)
 
-### Requirement: Experiments remain self-contained
-Each experiment directory under `compgen/experiments/` SHALL stay independently runnable: it MUST NOT import from the enclosing package or any root code, so that a single experiment directory remains portable on its own. Uploadable archives (`.zip`) SHALL NOT be committed; each SHALL be reproducible on demand from its experiment directory via the documented build command, and the archive content SHALL not depend on code outside that directory.
+### Requirement: Retained experiment stays self-contained
+The retained experiment directory under `compgen/experiments/` SHALL stand alone: it MUST NOT import from the enclosing package or any root code, so it remains portable on its own. Uploadable archives (`.zip`) SHALL NOT be committed; where an archive is still produced, it SHALL be reproducible on demand from the experiment directory via the documented build command and SHALL not depend on code outside that directory.
 
 #### Scenario: Experiment isolation preserved
-- **WHEN** all `.py` files and notebooks under `compgen/experiments/` are searched for imports of the enclosing package or of root `models`/`datasets`
+- **WHEN** all `.py` files and notebooks under `compgen/experiments/` are searched for imports of the enclosing package or of root `models`/`datasets`/`losses`
 - **THEN** zero matches are found
 
 #### Scenario: No committed upload archives
 - **WHEN** tracked files are listed (`git ls-files`) and searched for `.zip` entries
-- **THEN** zero upload archives are tracked, and the documented build command regenerates a byte-comparable archive from its experiment directory alone
+- **THEN** zero upload archives are tracked
 
-#### Scenario: Experiment self-test still passes
-- **WHEN** the PyTorch experiment's bundled self-check is run from inside its own directory
-- **THEN** it passes without any repository-root code
+#### Scenario: Retained experiment files are a self-contained analysis archive
+- **WHEN** the retained `.py` files in the PyTorch experiment directory are inspected
+- **THEN** they contain only self-contained analysis/plotting code, and the removed model, data, loss, training, self-test, and notebook-generation modules are absent
 
 ### Requirement: Documentation matches the layout
-`AGENTS.md` and the root `README.md` SHALL accurately describe the actual repository layout, import style, and data flow; every path they document SHALL exist, and no stale references (such as pointing at `dataset/generators/match3.py` or misattributing file locations) SHALL remain.
+`AGENTS.md` and the root `README.md` SHALL accurately describe the actual repository layout, import style, and data flow; every path they document SHALL exist, and no stale references (such as pointing at `dataset/generators/match3.py`, referencing the removed JAX experiment, or misattributing file locations) SHALL remain.
 
 #### Scenario: Documented paths exist
 - **WHEN** every repository-relative path mentioned in `AGENTS.md` and `README.md` is checked against the filesystem
@@ -68,6 +68,10 @@ Each experiment directory under `compgen/experiments/` SHALL stay independently 
 #### Scenario: Stale module references eliminated
 - **WHEN** docstrings and documentation are searched for the outdated `dataset/generators/` path and for imports not matching the new package prefix
 - **THEN** zero stale references remain, and the formerly misattributed docstring points at the module's real location
+
+#### Scenario: Removed experiment is not referenced
+- **WHEN** `AGENTS.md`, the root `README.md`, and the retained experiment documentation are searched for references to the removed JAX experiment or its files
+- **THEN** no such references remain
 
 ### Requirement: Generated artifacts stay untracked
 Generated datasets, training artifacts, and build outputs SHALL remain untracked: `.gitignore` SHALL cover `data/`, `*.jsonl`, `*.zip`, logs, checkpoints, and model binaries, and the reorganization SHALL NOT bring any generated artifact under version control.

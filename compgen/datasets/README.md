@@ -135,3 +135,34 @@ from compgen.datasets.torch_datasets.fuzzy_logic import FuzzyLogicDataset
 dataset = FuzzyLogicDataset("data/fuzzy_logic/train.jsonl")
 loader = DataLoader(dataset, batch_size=64, shuffle=True)
 ```
+
+### On-the-fly fuzzy-logic dataset
+
+For the reference experiment you do not need a file at all: the
+`torch_datasets/fuzzy_logic_online.py` generator builds the task's function
+pools in memory and samples fresh batches directly, with the reference
+train/test/`id`/`ood` splits (50/50 held-out in-distribution functions, 25%
+held-out conjunctions for OOD). It lives in the torch-facing layer because it
+returns tensors rather than serializing JSON Lines; everything under
+`generators/` stays torch-free.
+
+```python
+import torch
+from compgen.datasets.torch_datasets.fuzzy_logic_online import (
+    TASKS,
+    FuzzyLogicOnlineGenerator,
+)
+
+device = "cuda" if torch.cuda.is_available() else "cpu"
+generator = FuzzyLogicOnlineGenerator(**TASKS["logic_4var_2term"], seed=2024)
+print(generator.describe())  # {"conjunctions": 16, "train_functions": 33, ...}
+
+batch = generator.sample(batch_size=128, seq_len=16, split="train",
+                         batch_index=0, device=device)
+# batch.x (128, 16, num_variables + 1), batch.y (128, 1),
+# batch.latents (128, num_terms, num_variables), batch.term_ids (128, num_terms),
+# batch.base_mse (128,) — the reference per-example R² denominator.
+```
+
+Sampling is deterministic per `(split, batch_index, seed)`. Supported task
+configurations are listed in `TASKS`.

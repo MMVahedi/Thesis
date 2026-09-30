@@ -1,10 +1,10 @@
 {
-  "$schema": "https://opencode.ai/config.json",
-  "lsp": true,
-  "mcp": {
-    "arxiv": {
-      "type": "local",
-      "command": ["uvx", "arxiv-mcp-server", "--storage-path", "/Users/mohammad.mahdi.vahedi/Workspace/Thesis/papers"]
-    }
-  }
+  "$schema": "https://opencode.ai/config.json"
+  // "lsp": true,
+  // "mcp": {
+  //   "arxiv": {
+  //     "type": "local",
+  //     "command": ["uvx", "arxiv-mcp-server", "--storage-path", "/Users/mohammad.mahdi.vahedi/Workspace/Thesis/papers"]
+  //   }
+  // }
 }

@@ -2,8 +2,8 @@
 # Local PyTorch-side runtime environment for compgen, notebooks, and the
 # fuzzy_logic_attention_contrastive_pytorch experiment. Pinned to match the
 # GPU server: driver 595.91.07 / CUDA 13.2, RTX 2060 (sm_75), Python 3.12.
-# The isolated legacy experiment under
-# compgen/experiments/fuzzy_logic_attention_contrastive/ keeps its own requirements.
+# The retained fuzzy_logic_attention_contrastive_pytorch analysis archive keeps
+# its own requirements.
 torch==2.14.0+cu132
 numpy==2.5.2
 opt_einsum==3.4.0
