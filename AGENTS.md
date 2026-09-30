@@ -22,8 +22,8 @@ Thesis research workspace on attention/contrastive learning for compositional ge
 
 - Imports are package-prefixed (`from compgen.models.attentions.strassen import ...`, `from compgen.datasets.generators.match3 import ...`). Run scripts/notebooks with the repo root on `sys.path` (e.g. `python` from the root, or add `sys.path.append("..")` in notebooks). There is no installed package.
 - Running from the repo root no longer shadows HuggingFace's `datasets`: there is no top-level `datasets/` directory, so `import datasets` resolves to the installed package if present; local code is only reachable as `compgen.datasets`.
-- No root requirements file; notebooks/experiments assume `torch`, `numpy`, `opt_einsum`, `pandas`, `scikit-learn`, `matplotlib` are available. Python 3.14 is in use (`__pycache__`).
-- Development environment: the local machine has **no GPU and no PyTorch install**. Code is written here; torch-dependent code is executed and tested on the GPU server (or Colab/Kaggle for notebooks). Local verification is best-effort CPU-only (e.g. a temporary venv); never block implementation on torch/GPU-dependent tests — run those when on the GPU server.
+- Root `requirements.txt` pins the local PyTorch-side runtime environment (`torch==2.14.0+cu132`, `numpy`, `opt_einsum`, `pandas`, `scikit-learn`, `matplotlib`, `tqdm`, `ipython`). Install or refresh it from the repo root with `pip install -r requirements.txt`. It targets the GPU server (Python 3.12, driver 595.91.07 / CUDA 13.2, RTX 2060 `sm_75`); the isolated JAX experiment keeps its own requirements files.
+- Development environment: the local machine is the GPU server — NVIDIA GeForce RTX 2060 (Turing, `sm_75`), driver 595.91.07 / CUDA 13.2 — and code runs from the repo-root `venv/` (Python 3.12) with CUDA-enabled PyTorch, using `venv/bin/python`. Colab/Kaggle remain available for notebooks.
 - Attention classes default to `torch.float64` and use `opt_einsum.contract` for the higher-order score contractions.
 - Only self-check: `python self_test.py` inside `compgen/experiments/fuzzy_logic_attention_contrastive_pytorch/`.
 
