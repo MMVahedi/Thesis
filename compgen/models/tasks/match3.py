@@ -75,11 +75,20 @@ class Match3Model(nn.Module):
             hidden_dim=hidden_dim, dropout_rate=dropout_rate, dtype=dtype, device=device
         )
 
-    def forward(self, batch: dict):
+    def forward(self, batch: dict, return_attention: bool = False):
         hidden_state = self.embedding(batch)
+        attentions = []
         for layer in self.layers:
-            hidden_state = layer(hidden_state, batch_mask=batch["batch_mask"])
+            if return_attention:
+                hidden_state, attention = layer(
+                    hidden_state, batch_mask=batch["batch_mask"], return_attention=True
+                )
+                attentions.append(attention)
+            else:
+                hidden_state = layer(hidden_state, batch_mask=batch["batch_mask"])
 
         logits = self.classifier(hidden_state)
         y_hat = torch.sigmoid(logits)
+        if return_attention:
+            return y_hat, hidden_state, attentions
         return y_hat, hidden_state
