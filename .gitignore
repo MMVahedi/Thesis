@@ -31,6 +31,12 @@ outputs/
 *.ckpt
 *.pt
 
+# Experiment tracking (MLflow local SQLite store + artifacts)
+mlflow.db
+mlartifacts/
+# MLflow filesystem store (opt-in via MLFLOW_ALLOW_FILE_STORE)
+mlruns/
+
 # Generated datasets
 data/
 *.jsonl
