@@ -20,6 +20,7 @@ Two prongs share one library, `compgen/`:
 | `compgen/tracking/` | MLflow-backed experiment tracking: run lifecycle and logging of parameters, metrics (with steps), artifacts, and PyTorch models; defaults to the local `sqlite:///mlflow.db` store (artifacts under `mlartifacts/`), overridable via an explicit URI or `MLFLOW_TRACKING_URI` |
 | `compgen/training/` | Task-agnostic training/evaluation scaffold: `fit` runs epochs over caller-supplied data and a `step_fn(model, batch) -> (loss, metrics)`, handling optimizer/scheduler, device, seeding, evaluation, best-checkpoint selection, and early stopping, and records runs through `compgen.tracking` |
 | `compgen/experiments/` | The retained self-contained PyTorch fuzzy-logic analysis archive with its own README, requirements, and frozen notebook — it imports nothing from the rest of the repo |
+| `compgen/runners/` | Runnable experiment entry points that compose the package; currently the four-model fuzzy-logic contrastive comparison (`fuzzy_logic_contrastive/`: softmax/linear attention × without/with the final-layer response-token attention-code contrastive term), run with `python -m compgen.runners.fuzzy_logic_contrastive` |
 | `notebooks/` | Match3 notebooks comparing Strassen vs. softmax attention |
 | `notes/` | Research notes (Obsidian markdown) |
 | `documents/` | Thesis-authored PDFs (proposal, thesis draft) |
@@ -31,6 +32,7 @@ Two prongs share one library, `compgen/`:
 
 - Library usage and dataset generation: see `compgen/datasets/README.md`.
 - Run the contrastive experiment / fuzzy-logic model: see `compgen/experiments/fuzzy_logic_attention_contrastive_pytorch/README.md` (analysis archive); the model, on-the-fly data, and loss now live under `compgen/` (`models/tasks/fuzzy_logic.py`, `datasets/torch_datasets/fuzzy_logic_online.py`, `losses/`).
+- Run the four-model fuzzy-logic contrastive comparison (softmax/linear × without/with the response-token attention-code contrastive term): `python -m compgen.runners.fuzzy_logic_contrastive` (see `compgen/runners/fuzzy_logic_contrastive/`).
 - Match3 model comparisons: open a notebook in `notebooks/` (run with the repo root on `sys.path`).
 
 ### Interpretability

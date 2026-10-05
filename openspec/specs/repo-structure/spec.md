@@ -7,7 +7,7 @@ Defines the organizing contract of the thesis workspace: one code package, a pre
 ## Requirements
 
 ### Requirement: Single top-level code package
-All runnable library code (attention models, embeddings, tasks, dataset generators, torch datasets, losses) SHALL live under exactly one top-level Python package, the experiment suite SHALL live under `experiments/` within that package (`compgen/experiments/`), and the repository root SHALL NOT contain top-level `models/`, `datasets/`, `losses/`, or `experiments/` code directories. As a result, running Python from the repository root SHALL NOT shadow any identically named installed third-party package (notably HuggingFace `datasets`).
+All runnable library code (attention models, embeddings, tasks, dataset generators, torch datasets, losses, and runnable experiment entry points) SHALL live under exactly one top-level Python package. Within that package, the isolated experiment archives SHALL live under `experiments/` (`compgen/experiments/`) and SHALL NOT import the enclosing package, while runnable experiment entry points that compose the package SHALL live under `runners/` (`compgen/runners/`). The repository root SHALL NOT contain top-level `models/`, `datasets/`, `losses/`, `experiments/`, or `runners/` code directories. As a result, running Python from the repository root SHALL NOT shadow any identically named installed third-party package (notably HuggingFace `datasets`).
 
 #### Scenario: Root run resolves third-party datasets
 - **WHEN** a process is started from the repository root and `import datasets` executes in an environment where HuggingFace `datasets` is installed
@@ -20,6 +20,10 @@ All runnable library code (attention models, embeddings, tasks, dataset generato
 #### Scenario: Experiments relocated under the package
 - **WHEN** the repository root is listed after the reorganization
 - **THEN** no `experiments/` directory exists at the root, the retained experiment is found at `compgen/experiments/fuzzy_logic_attention_contrastive_pytorch/`, and no JAX experiment directory exists
+
+#### Scenario: Package-composing runners have a defined home
+- **WHEN** the repository is inspected for runnable experiment entry points that import the enclosing package
+- **THEN** each such entry point is found under `compgen/runners/`, and no entry point that imports the enclosing package lives under `compgen/experiments/`
 
 ### Requirement: Import discipline
 Python files, notebooks, and usage documentation SHALL import local code exclusively through the top-level package prefix (`compgen.*`); no old-style top-level imports (`from models...`, `from datasets...`) or references describing them SHALL remain anywhere in the repository.
