@@ -12,3 +12,5 @@ scikit-learn==1.9.1
 matplotlib==3.11.2
 tqdm==4.70.1
 ipython==9.17.1
+# Experiment tracking for compgen/tracking (and the compgen/training scaffold).
+mlflow==3.16.1
