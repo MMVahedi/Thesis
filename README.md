@@ -17,6 +17,8 @@ Two prongs share one library, `compgen/`:
 | `compgen/datasets/` | Dataset generators (`generators/`, torch-free, write `.jsonl`) and PyTorch datasets (`torch_datasets/`, including the on-the-fly fuzzy-logic sampler); see `compgen/datasets/README.md` for task specs and usage examples |
 | `compgen/losses/` | Reusable objectives: the shared-term supervised contrastive loss and a model-agnostic combined task+contrastive loss |
 | `compgen/analytics/` | Reusable, task-agnostic interpretability tools: attention→vector extraction and per-token attention inspection (`attention.py`), PCA projection of representation vectors to (by default) 2D (`projection.py`), scatter/heatmap figure helpers (`plotting.py`), and a model capture helper (`capture.py`) that records per-layer attention and hidden states |
+| `compgen/tracking/` | MLflow-backed experiment tracking: run lifecycle and logging of parameters, metrics (with steps), artifacts, and PyTorch models; defaults to the local `sqlite:///mlflow.db` store (artifacts under `mlartifacts/`), overridable via an explicit URI or `MLFLOW_TRACKING_URI` |
+| `compgen/training/` | Task-agnostic training/evaluation scaffold: `fit` runs epochs over caller-supplied data and a `step_fn(model, batch) -> (loss, metrics)`, handling optimizer/scheduler, device, seeding, evaluation, best-checkpoint selection, and early stopping, and records runs through `compgen.tracking` |
 | `compgen/experiments/` | The retained self-contained PyTorch fuzzy-logic analysis archive with its own README, requirements, and frozen notebook — it imports nothing from the rest of the repo |
 | `notebooks/` | Match3 notebooks comparing Strassen vs. softmax attention |
 | `notes/` | Research notes (Obsidian markdown) |
