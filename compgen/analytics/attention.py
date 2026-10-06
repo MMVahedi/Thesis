@@ -9,6 +9,8 @@ analyze. They operate on plain tensors and import no task-specific code:
   default to the last position.
 - `attention_row_features(attention, query_token)`: the full attention row of a
   query token, flattened over heads and keys.
+- `attention_matrix_features(attention)`: the full attention matrix, flattened
+  over heads, query positions, and key positions.
 - `stack_layers(attentions, reducer)`: concatenate per-layer features so layer
   identity is preserved in the resulting vector.
 - `token_attention_row(attentions, layer, query_token, batch_index, ...)`: the
@@ -85,6 +87,18 @@ def attention_row_features(
     return row.reshape(batch, heads * length)
 
 
+def attention_matrix_features(attention: torch.Tensor) -> torch.Tensor:
+    """Full attention matrix, flattened over heads, query positions, and keys.
+
+    Returns a ``(B, H * N * N)`` tensor. Unlike :func:`attention_row_features`,
+    which reads a single query token's row, this keeps every query token's
+    attention distribution.
+    """
+    _check_attention(attention)
+    batch, heads, length, _ = attention.shape
+    return attention.reshape(batch, heads * length * length)
+
+
 def stack_layers(
     attentions: LayerSet,
     reducer: str = "code",
@@ -95,15 +109,19 @@ def stack_layers(
 
     ``reducer="code"`` uses :func:`attention_code` and returns ``(B, L * H)``;
     ``reducer="row"`` uses :func:`attention_row_features` and returns
-    ``(B, L * H * N)``. Layer order is preserved along the feature dimension.
+    ``(B, L * H * N)``; ``reducer="matrix"`` uses
+    :func:`attention_matrix_features` and returns ``(B, L * H * N * N)``. Layer
+    order is preserved along the feature dimension.
     """
-    if reducer not in ("code", "row"):
-        raise ValueError(f"reducer must be 'code' or 'row', got {reducer!r}")
+    if reducer not in ("code", "row", "matrix"):
+        raise ValueError(f"reducer must be 'code', 'row', or 'matrix', got {reducer!r}")
     layers = as_layers(attentions)
     if reducer == "code":
         features = [attention_code(layer, query_token, key_token) for layer in layers]
-    else:
+    elif reducer == "row":
         features = [attention_row_features(layer, query_token) for layer in layers]
+    else:  # "matrix"
+        features = [attention_matrix_features(layer) for layer in layers]
     return torch.cat(features, dim=1)
 
 

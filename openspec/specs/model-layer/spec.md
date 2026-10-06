@@ -91,12 +91,12 @@ The registry SHALL expose two sibling mixers that share the same projection, sca
 - **WHEN** every repository-relative path mentioned for the model layer in `AGENTS.md` and `README.md` is checked against the filesystem
 - **THEN** each path exists in the documented form, and the add-a-task convention matches the actual directory structure
 
-### Requirement: Reusable shared model blocks
-The model layer SHALL provide reusable, task-agnostic blocks that compose into full sequence models: a relative-position bias block that produces an additive attention bias indexed by head and query/key position from a sequence length, feed-forward block support for both the existing residual ReLU stack and a two-projection GELU residual block, and a regression head that maps token hidden states to a scalar prediction after a final normalization.
+### Requirement: Reusable model blocks and fixed positional encoding
+The model layer SHALL provide reusable, task-agnostic blocks that compose into full sequence models: a fixed absolute positional encoding block that produces a deterministic position vector for each sequence position, feed-forward block support for both the existing residual ReLU stack and a two-projection GELU residual block, and a regression head that maps token hidden states to a scalar prediction after a final normalization. The model layer SHALL NOT provide a relative-position bias block.
 
-#### Scenario: Relative-position bias is head-indexed and additive
-- **WHEN** the relative-position bias block is evaluated for a sequence length and head count
-- **THEN** it returns a tensor broadcastable over batch with one bias value per head and query/key position
+#### Scenario: Positional encoding is deterministic and position-indexed
+- **WHEN** the positional encoding block is evaluated for a sequence length and hidden width
+- **THEN** it returns a tensor with one position vector per sequence position at the given hidden width, broadcastable over batch, and containing no learned parameters
 
 #### Scenario: Both feed-forward variants are available
 - **WHEN** an encoder layer is constructed with each supported feed-forward variant
@@ -114,10 +114,10 @@ The sequence-composable attention architectures registered in the shared registr
 - **THEN** the resulting attention weights differ and keep the same shape
 
 ### Requirement: Fuzzy-logic regression task model
-The model layer SHALL provide a fuzzy-logic regression task model that composes a task-specific input embedding, a configurable stack of encoder layers whose attention is chosen from the shared registry, and the regression head, and SHALL accept any registered sequence-composable attention architecture name.
+The model layer SHALL provide a fuzzy-logic regression task model that composes a task-specific input embedding, a configurable stack of encoder layers whose attention is chosen from the shared registry, and the regression head, and SHALL accept any registered sequence-composable attention architecture name. The task-specific input embedding SHALL add a fixed absolute positional encoding to its projected token representations.
 
 #### Scenario: Model reproduces the reference architecture
-- **WHEN** the fuzzy-logic task model is constructed with the reference configuration (two layers, hidden width 128, feed-forward width 256, 8 heads, query/key and value width 16, relative-position bias, GELU feed-forward)
+- **WHEN** the fuzzy-logic task model is constructed with the reference configuration (two layers, hidden width 128, feed-forward width 256, 8 heads, query/key and value width 16, fixed absolute positional encoding, GELU feed-forward)
 - **THEN** it produces per-token scalar predictions and exposes one attention-weight matrix per layer
 
 #### Scenario: Registered architectures are accepted
@@ -127,6 +127,10 @@ The model layer SHALL provide a fuzzy-logic regression task model that composes 
 #### Scenario: Unknown architecture name is rejected
 - **WHEN** the fuzzy-logic task model is constructed with a name absent from the shared registry
 - **THEN** construction fails with an error naming the unsupported architecture
+
+#### Scenario: Position enters once through the input embedding
+- **WHEN** the fuzzy-logic task model processes a batch
+- **THEN** a fixed position signal is added to the embedded tokens before the encoder stack, and no relative-position bias is added to attention scores
 
 ### Requirement: Task models expose attention weights on demand
 A task model in the model layer SHALL be able to return its per-layer attention weights on demand through its `forward` method, without changing its default output. `Match3Model.forward` SHALL accept an optional `return_attention` argument (default `False`); when `False` it SHALL return exactly the previous output, and when `True` it SHALL additionally return the attention weights of every encoder layer in order, each of shape `(batch, num_heads, length, length)`. This mirrors the fuzzy-logic task model's existing attention-returning path.

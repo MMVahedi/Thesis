@@ -3,10 +3,9 @@ Task-agnostic transformer encoder layer: a registered attention architecture
 plus a feed-forward stack, each wrapped in a plain residual connection.
 
 This module composes only shared pieces (the attention registry in
-`compgen/models/attentions/` and the relative-position bias in
-`compgen/models/position.py`) and must not import task-specific code — task
+`compgen/models/attentions/`) and must not import task-specific code — task
 models under `compgen/models/tasks/` assemble this layer with their own
-task-specific embedding.
+task-specific embedding (which is where positional information is added).
 
 Feed-forward variants:
 - ``"relu_stack"`` (default): the historical ``ffn_depth`` copies of
@@ -14,9 +13,8 @@ Feed-forward variants:
 - ``"gelu"``: a two-projection ``Linear(ffn_dim) -> GELU -> Dropout ->
   Linear(hidden)`` block, matching the reference fuzzy-logic transformer.
 
-Relative-position bias: when ``use_relative_bias`` is set the layer owns a
-`RelativePositionBias` and supplies it to attention as an additive
-``score_bias`` computed from the runtime sequence length.
+Score bias: the layer accepts an optional additive ``score_bias`` and forwards
+it to attention unchanged, but it does not own or compute any position bias.
 """
 
 from typing import Optional
@@ -25,7 +23,6 @@ import torch
 import torch.nn as nn
 
 from compgen.models.attentions import ATTENTION_CLASSES
-from compgen.models.position import RelativePositionBias
 
 
 def _init_attention_weights(attention: nn.Module) -> None:
@@ -63,9 +60,6 @@ class EncoderLayer(nn.Module):
         ffn_dim: Optional[int] = None,
         use_norm: bool = False,
         eps: float = 1e-6,
-        use_relative_bias: bool = False,
-        relative_bias_num_buckets: int = 16,
-        relative_bias_max_distance: int = 16,
         dtype: torch.dtype = torch.float64,
         device: str = "cpu",
     ):
@@ -120,16 +114,6 @@ class EncoderLayer(nn.Module):
         self.dropout1 = nn.Dropout(dropout_rate)
         self.dropout2 = nn.Dropout(dropout_rate)
 
-        self.relative_bias = None
-        if use_relative_bias:
-            self.relative_bias = RelativePositionBias(
-                num_heads=num_heads,
-                num_buckets=relative_bias_num_buckets,
-                max_distance=relative_bias_max_distance,
-                dtype=dtype,
-                device=device,
-            )
-
     def forward(
         self,
         hidden_state: torch.Tensor,
@@ -137,9 +121,6 @@ class EncoderLayer(nn.Module):
         score_bias: Optional[torch.Tensor] = None,
         return_attention: bool = False,
     ):
-        if score_bias is None and self.relative_bias is not None:
-            score_bias = self.relative_bias(hidden_state.shape[1], hidden_state.device)
-
         x = self.norm1(hidden_state) if self.use_norm else hidden_state
         attention_output, attention_weights = self.attention(
             hidden_state=x, batch_mask=batch_mask, score_bias=score_bias

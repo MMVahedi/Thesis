@@ -11,7 +11,10 @@ that shape a run are exposed as flags; the small defaults are used when omitted.
 import argparse
 from typing import List, Optional
 
-from compgen.runners.fuzzy_logic_contrastive.config import ExperimentConfig
+from compgen.runners.fuzzy_logic_contrastive.config import (
+    CONTRASTIVE_REPRESENTATIONS,
+    ExperimentConfig,
+)
 from compgen.runners.fuzzy_logic_contrastive.run import run_experiment
 
 
@@ -30,6 +33,13 @@ def build_parser() -> argparse.ArgumentParser:
         "--lambda-contrastive", type=float, default=defaults.lambda_contrastive
     )
     parser.add_argument("--temperature", type=float, default=defaults.temperature)
+    parser.add_argument(
+        "--contrastive-representation",
+        choices=CONTRASTIVE_REPRESENTATIONS,
+        default=defaults.contrastive_representation,
+        help="final-layer attention reduction for the contrastive term "
+        "(default: code)",
+    )
     parser.add_argument("--seed", type=int, default=defaults.seed)
     parser.add_argument("--device", default=defaults.device)
     parser.add_argument("--output-dir", default=defaults.output_dir)
@@ -56,6 +66,7 @@ def config_from_args(args: argparse.Namespace) -> ExperimentConfig:
         epochs=args.epochs,
         lambda_contrastive=args.lambda_contrastive,
         temperature=args.temperature,
+        contrastive_representation=args.contrastive_representation,
         seed=args.seed,
         device=args.device,
         output_dir=args.output_dir,

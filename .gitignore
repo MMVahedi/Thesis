@@ -26,7 +26,9 @@ env/
 logs/
 wandb/
 checkpoints/
-results/
+results/*
+# Keep the design note on the removed relative-position bias under results/.
+!results/relative_position_bias.md
 outputs/
 *.ckpt
 *.pt

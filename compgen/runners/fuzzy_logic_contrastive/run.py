@@ -72,9 +72,6 @@ def build_model(config: ExperimentConfig, attention_type: str, device) -> FuzzyL
         dropout_rate=config.dropout_rate,
         attention_dropout_rate=config.attention_dropout_rate,
         use_norm=config.use_norm,
-        use_relative_bias=config.use_relative_bias,
-        relative_bias_num_buckets=config.relative_bias_num_buckets,
-        relative_bias_max_distance=config.relative_bias_max_distance,
         attention_bias=config.attention_bias,
         dtype=torch.float64,
         device=str(device),
@@ -82,19 +79,26 @@ def build_model(config: ExperimentConfig, attention_type: str, device) -> FuzzyL
 
 
 def build_optimizer(model: torch.nn.Module, config: ExperimentConfig):
-    decay, no_decay = [], []
-    for parameter in model.parameters():
-        (no_decay if parameter.ndim == 1 else decay).append(parameter)
+    # Ideally weight decay is applied selectively: 1-D parameters (biases and
+    # LayerNorm gains) are left undecayed, since shrinking a bias or a norm
+    # gain toward zero is not regularization we want, while >=2-D weight
+    # matrices are decayed. AdamW is used precisely because it decouples the
+    # decay from the gradient update, which is what makes a per-group
+    # `weight_decay` behave as intended. This split is kept here for reference
+    # but is currently NOT used: we decay every parameter uniformly for now.
+    # decay, no_decay = [], []
+    # for parameter in model.parameters():
+    #     (no_decay if parameter.ndim == 1 else decay).append(parameter)
+
     return torch.optim.AdamW(
-        [
-            {"params": decay, "weight_decay": config.weight_decay},
-            {"params": no_decay, "weight_decay": 0.0},
-        ],
+        model.parameters(),
         lr=config.learning_rate,
+        weight_decay=config.weight_decay,
     )
 
 
 def build_scheduler(optimizer, config: ExperimentConfig):
+    """Cosine LR decay; only constructed when ``config.use_scheduler`` is True."""
     return torch.optim.lr_scheduler.CosineAnnealingLR(
         optimizer, T_max=max(config.epochs, 1), eta_min=config.min_learning_rate
     )
@@ -117,7 +121,11 @@ def evaluate_split(model, generator, config, split, device, lambda_contrastive) 
         for index in range(steps):
             batch = generator.sample(config.batch_size, config.seq_len, split, index, device)
             output = forward_batch(
-                model, batch, lambda_contrastive, config.temperature
+                model,
+                batch,
+                lambda_contrastive,
+                config.temperature,
+                config.contrastive_representation,
             )
             error = (output.prediction - output.target).squeeze(-1)
             seen += error.numel()
@@ -155,12 +163,18 @@ def run_variant(
         generator, config, "train", config.num_train // config.batch_size, device
     )
     model = build_model(config, variant.attention_type, device)
-    step_fn = make_step_fn(variant.lambda_contrastive, config.temperature)
+    step_fn = make_step_fn(
+        variant.lambda_contrastive,
+        config.temperature,
+        config.contrastive_representation,
+    )
     optimizer = build_optimizer(model, config)
-    scheduler = build_scheduler(optimizer, config)
+    # Fixed learning rate by default; the cosine schedule is opt-in.
+    scheduler = build_scheduler(optimizer, config) if config.use_scheduler else None
 
+    run_name = f"{variant.name}_{config.contrastive_representation}"
     run_context = (
-        tracking.start_run(run_name=variant.name) if config.track else nullcontext()
+        tracking.start_run(run_name=run_name) if config.track else nullcontext()
     )
     with run_context:
         if config.track:
@@ -169,6 +183,7 @@ def run_variant(
                     "attention_type": variant.attention_type,
                     "lambda_contrastive": variant.lambda_contrastive,
                     "temperature": config.temperature,
+                    "contrastive_representation": config.contrastive_representation,
                     "task": config.task,
                     "num_train": config.num_train,
                     "num_eval": config.num_eval,
@@ -177,6 +192,7 @@ def run_variant(
                     "seq_len": config.seq_len,
                     "learning_rate": config.learning_rate,
                     "weight_decay": config.weight_decay,
+                    "use_scheduler": config.use_scheduler,
                     "seed": config.seed,
                 }
             )
@@ -205,13 +221,14 @@ def run_variant(
         metrics["train_loss"] = result.history[-1].train_loss if result.history else float("nan")
         metrics["attention_type"] = variant.attention_type
         metrics["lambda_contrastive"] = variant.lambda_contrastive
-        metrics["run_name"] = variant.name
+        metrics["contrastive_representation"] = config.contrastive_representation
+        metrics["run_name"] = run_name
 
         if config.track:
             tracking.log_metrics(_loggable(metrics))
 
     output_dir.mkdir(parents=True, exist_ok=True)
-    with (output_dir / f"{variant.name}.json").open("w") as stream:
+    with (output_dir / f"{run_name}.json").open("w") as stream:
         json.dump(metrics, stream, indent=2, sort_keys=True)
     return metrics
 

@@ -18,7 +18,7 @@ The analytics layer SHALL operate on caller-supplied tensors — attention weigh
 - **THEN** the import succeeds and the public functions are available
 
 ### Requirement: Attention-derived representation vectors
-The analytics layer SHALL provide a function that reduces attention weights of shape `(B, H, N, N)` to per-example representation vectors, selecting a query token (defaulting to the last token) and combining the selected token's attention over key positions across heads, and SHALL preserve the per-head structure as separate features so the vector has shape `(B, H)` (or `(B, H * N)` when the full attention row per head is requested). It SHALL accept a single attention tensor or a stack of layers and, when given a stack, MAY concatenate each layer's contribution.
+The analytics layer SHALL provide a function that reduces attention weights of shape `(B, H, N, N)` to per-example representation vectors in one of three forms: the attention value at a selected query and key position per head, giving shape `(B, H)`; the selected query token's attention over key positions flattened over heads and keys, giving shape `(B, H * N)`; or the full attention matrix flattened over heads, query positions, and key positions, giving shape `(B, H * N * N)`. The query token SHALL default to the last token. It SHALL accept a single attention tensor or a stack of layers and, when given a stack, MAY concatenate each layer's contribution.
 
 #### Scenario: A token's attention becomes one vector per example
 - **WHEN** attention weights `(B, H, N, N)` are reduced for a chosen query token
@@ -31,6 +31,10 @@ The analytics layer SHALL provide a function that reduces attention weights of s
 #### Scenario: Layers can be stacked
 - **WHEN** a list of per-layer attention tensors is passed
 - **THEN** each layer contributes its own features and the per-layer contributions can be distinguished in the result
+
+#### Scenario: The full attention matrix flattens to one vector per example
+- **WHEN** the full-matrix reduction is requested for attention weights `(B, H, N, N)`
+- **THEN** each example's vector contains one feature per head, query position, and key position, giving shape `(B, H * N * N)`
 
 ### Requirement: Per-token attention inspection
 The analytics layer SHALL provide a function that reads, for a chosen batch example, the attention distribution of a specific query token over the key positions of a given layer, returning either one row per attention head or a single row averaged over heads. Query-token, head, and layer selection SHALL be explicit arguments, and the returned rows SHALL be the original (possibly head-averaged) attention weights for that query token.

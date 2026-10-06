@@ -7,8 +7,7 @@ scaled scores directly — the final softmax normalization is removed. Because a
 unnormalized sum would still add a large additive padding value, padding is
 masked by zeroing instead of by adding `mask_padding_value`. This masking
 difference is the one deliberate divergence from `SoftmaxAttention`. An optional
-additive `score_bias` (for example a relative-position bias) is added to the
-scaled scores before masking.
+additive `score_bias` is added to the scaled scores before masking.
 """
 
 import torch
@@ -64,7 +63,7 @@ class LinearAttention(BaseAttention):
 
         scores = contract("bhid,bhjd->bhij", q, k) * self.scaler
         if score_bias is not None:
-            # Additive bias (e.g. a relative-position bias) broadcast over batch.
+            # Additive score bias broadcast over batch.
             scores = scores + score_bias
 
         attention_mask = None

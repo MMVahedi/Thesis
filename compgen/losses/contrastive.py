@@ -23,11 +23,26 @@ def positive_partner_counts(term_ids: torch.Tensor) -> tuple:
 
     `positive_mask[i, j]` is True when examples i and j share at least one term
     (and i != j); `counts[i]` is the number of positive partners of example i.
+
+    `term_ids` has shape (N, K): N examples, one term index per column.
     """
-    shared = (term_ids[:, None, :, None] == term_ids[None, :, None, :]).any(dim=3).any(dim=2)
-    eye = torch.eye(len(term_ids), dtype=torch.bool, device=term_ids.device)
-    positives = shared & ~eye
-    return positives, positives.sum(dim=1)
+    # term_ids[:, None, :, None] -> (N, 1, K, 1)
+    # term_ids[None, :, None, :] -> (1, N, 1, K)
+    # Broadcast comparison -> (N, N, K, K), where `same_term[i, j, k, l]` is
+    # True when term k of example i equals term l of example j.
+    same_term = term_ids[:, None, :, None] == term_ids[None, :, None, :]
+
+    # Collapse both term axes -> (N, N), where `shares_term[i, j]` is True when
+    # examples i and j share at least one term.
+    shares_term = same_term.any(dim=(2, 3))
+
+    # (N, N) mask with the diagonal cleared: an example trivially shares a term
+    # with itself.
+    positive_mask = shares_term
+    positive_mask.fill_diagonal_(False)
+
+    # Positive partners per example -> (N,).
+    return positive_mask, positive_mask.sum(dim=1)
 
 
 def shared_term_contrastive(
@@ -35,6 +50,7 @@ def shared_term_contrastive(
 ) -> tuple:
     """Shared-term InfoNCE loss and the mean positive-partner count."""
     positives, num_positives = positive_partner_counts(term_ids)
+    # Identity matrix as a boolean mask: eye[i, j] is True only when i == j.
     eye = torch.eye(len(term_ids), dtype=torch.bool, device=term_ids.device)
 
     z = F.normalize(representations, dim=1)

@@ -5,9 +5,8 @@ Scaled dot-product attention with independent query/key and value head
 dimensions (see `BaseAttention`). Scores are masked, stabilized by subtracting
 the per-row maximum, normalized with softmax over keys, optionally dropped out,
 then used to aggregate the values. Configuration and shared mechanics live in
-`BaseAttention`. An optional additive `score_bias` (for example a
-relative-position bias) is added to the scaled scores before masking and
-normalization.
+`BaseAttention`. An optional additive `score_bias` is added to the scaled scores
+before masking and normalization.
 """
 
 import torch
@@ -63,7 +62,7 @@ class SoftmaxAttention(BaseAttention):
 
         scores = contract("bhid,bhjd->bhij", q, k) * self.scaler
         if score_bias is not None:
-            # Additive bias (e.g. a relative-position bias) broadcast over batch.
+            # Additive score bias broadcast over batch.
             scores = scores + score_bias
 
         attention_mask = None

@@ -16,6 +16,7 @@ same functions work for the fuzzy-logic, Match3, and future task models.
 
 from compgen.analytics.attention import (
     attention_code,
+    attention_matrix_features,
     attention_row_features,
     stack_layers,
     token_attention_row,
@@ -29,6 +30,7 @@ __all__ = [
     "PCAProjector",
     "ProjectionResult",
     "attention_code",
+    "attention_matrix_features",
     "attention_row_features",
     "capture",
     "pca_project",

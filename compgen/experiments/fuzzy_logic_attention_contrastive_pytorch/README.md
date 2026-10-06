@@ -20,7 +20,7 @@ code and the committed notebook.
 - Zadeh fuzzy logic (`min` for AND, `max` for OR), task construction, 50/50 held-out
   in-distribution function split, and 25% held-out conjunctions for OOD.
 - Reference hyperparameters in `config.py`: sequence length 16; 2 layers; embedding 128;
-  MLP 256; 8 heads; total Q/K and V dimensions 16; relative-position bias; standard
+  MLP 256; 8 heads; total Q/K and V dimensions 16; standard
   attention; AdamW; learning rate 0.001; 100 warmup steps; cosine decay to 0.0001;
   weight decay 0.1.
 - MSE regression and the reference per-example R² definition.

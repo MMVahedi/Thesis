@@ -13,8 +13,8 @@ from typing import Callable, Optional, Tuple
 import torch
 import torch.nn.functional as F
 
+from compgen.analytics import stack_layers
 from compgen.losses import combined_loss
-from compgen.models.tasks.fuzzy_logic import FuzzyLogicModel
 
 
 @dataclass
@@ -34,17 +34,21 @@ def forward_batch(
     batch,
     lambda_contrastive: float = 0.0,
     temperature: float = 1.0,
+    representation: str = "code",
 ) -> BatchOutput:
     """Run one batch and compute the task (+ optional contrastive) loss.
 
     With a positive ``lambda_contrastive`` the model is asked for attention and
-    the final-layer, last-token attention code across heads is passed to the
-    package's combined loss; with a zero coefficient the contrastive term is
-    skipped entirely, matching the reference baseline behavior.
+    the final-layer representation selected by ``representation`` (see
+    ``compgen.analytics.stack_layers``) is passed to the package's combined
+    loss; with a zero coefficient the contrastive term is skipped entirely,
+    matching the reference baseline behavior.
     """
     if lambda_contrastive > 0:
         prediction, attentions = model(batch.x, return_attention=True)
-        codes: Optional[torch.Tensor] = FuzzyLogicModel.response_token_codes(attentions)
+        codes: Optional[torch.Tensor] = stack_layers(
+            attentions[-1], reducer=representation
+        )
     else:
         prediction = model(batch.x)
         codes = None
@@ -69,12 +73,16 @@ def forward_batch(
 
 
 def make_step_fn(
-    lambda_contrastive: float = 0.0, temperature: float = 1.0
+    lambda_contrastive: float = 0.0,
+    temperature: float = 1.0,
+    representation: str = "code",
 ) -> Callable[[torch.nn.Module, object], Tuple[torch.Tensor, dict]]:
     """Build a ``step_fn(model, batch) -> (loss, metrics)`` for ``compgen.training.fit``."""
 
     def step_fn(model: torch.nn.Module, batch) -> Tuple[torch.Tensor, dict]:
-        output = forward_batch(model, batch, lambda_contrastive, temperature)
+        output = forward_batch(
+            model, batch, lambda_contrastive, temperature, representation
+        )
         metrics = {
             "contrastive_loss": float(output.contrastive_loss.detach()),
             "avg_positive_partners": float(output.average_positives.detach()),

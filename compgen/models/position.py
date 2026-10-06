@@ -1,67 +1,65 @@
 """
-Reusable relative-position bias block.
+Reusable fixed absolute positional encoding.
 
-Produces an additive attention bias indexed by head and query/key position,
-following the T5-style unidirectional bucketing used by the reference
-fuzzy-logic transformer: nearby distances get their own bucket, farther
-distances are spread logarithmically up to `max_distance`, and the bias is
-looked up from a learned per-head embedding. The result broadcasts over the
-batch dimension of attention scores `(B, H, N, N)`.
+Produces a deterministic, parameter-free positional encoding using the standard
+sinusoidal formulation from "Attention Is All You Need" (Vaswani et al., 2017).
+For position ``p`` and channel ``c`` (``i = c // 2``)::
 
-This is a task-agnostic block: it knows nothing about any task model, and
-`EncoderLayer` can own one to feed attention through its `score_bias` argument.
+    PE[p, c] = sin(p / 10000^(2i / hidden_dim))   if c is even
+    PE[p, c] = cos(p / 10000^(2i / hidden_dim))   if c is odd
+
+so each pair of channels shares one frequency, running from ``10000^0`` to
+``10000^((hidden_dim - 2) / hidden_dim)``.
+
+This is a task-agnostic block: it knows nothing about any task model. Consumers
+add its output to a batch of token embeddings of shape ``(batch, length,
+hidden_dim)``; the ``(length, hidden_dim)`` result broadcasts over the batch.
 """
-
-import math
 
 import torch
 import torch.nn as nn
 
 
-def relative_position_buckets(
-    relative_position: torch.Tensor, num_buckets: int, max_distance: int
-) -> torch.Tensor:
-    """Map integer relative positions to bucket indices (unidirectional, T5-style)."""
-    n = torch.maximum(-relative_position, torch.zeros_like(relative_position))
-    max_exact = num_buckets // 2
-    is_small = n < max_exact
-    large = max_exact + (
-        torch.log(n.float().clamp_min(1) / max_exact)
-        / math.log(max_distance / max_exact)
-        * (num_buckets - max_exact)
-    ).long()
-    large = torch.minimum(large, torch.full_like(large, num_buckets - 1))
-    return torch.where(is_small, n, large)
+class SinusoidalPositionalEncoding(nn.Module):
+    """Fixed sinusoidal absolute positional encoding (no learned parameters).
 
-
-class RelativePositionBias(nn.Module):
-    """Learned per-head additive attention bias from relative positions.
-
-    `forward(length)` returns a `(1, num_heads, length, length)` tensor that
-    can be added directly to attention scores.
+    ``forward(length)`` returns a ``(length, hidden_dim)`` tensor. The encoding
+    has no parameters and no length bound: it is computed on demand, so it can
+    be evaluated for any sequence length and adds nothing to a checkpoint.
     """
 
     def __init__(
         self,
-        num_heads: int,
-        num_buckets: int = 16,
-        max_distance: int = 16,
+        hidden_dim: int,
         dtype: torch.dtype = torch.float64,
         device: str = "cpu",
     ):
         super().__init__()
-        self.num_buckets = num_buckets
-        self.max_distance = max_distance
-        self.embedding = nn.Embedding(
-            num_buckets, num_heads, dtype=dtype, device=device
-        )
+        if hidden_dim <= 0:
+            raise ValueError("hidden_dim must be positive")
+        self.hidden_dim = hidden_dim
+        self.dtype = dtype
+        self.device = device
 
-    def forward(self, length: int, device: torch.device = None) -> torch.Tensor:
-        if device is None:
-            device = self.embedding.weight.device
-        context = torch.arange(length, device=device)[:, None]
-        memory = torch.arange(length, device=device)[None, :]
-        buckets = relative_position_buckets(
-            memory - context, self.num_buckets, self.max_distance
+    def forward(
+        self,
+        length: int,
+        device: torch.device = None,
+        dtype: torch.dtype = None,
+    ) -> torch.Tensor:
+        device = self.device if device is None else device
+        dtype = self.dtype if dtype is None else dtype
+
+        position = torch.arange(length, device=device, dtype=dtype).unsqueeze(1)
+        channels = torch.arange(self.hidden_dim, device=device, dtype=dtype)
+        # Each channel pair (2i, 2i + 1) shares the divisor 10000^(2i / hidden).
+        divisor = torch.pow(
+            10000.0,
+            2.0 * (channels // 2) / self.hidden_dim,
         )
-        return self.embedding(buckets).permute(2, 0, 1).unsqueeze(0)
+        angle = position / divisor
+        return torch.where(
+            (channels % 2 == 0).unsqueeze(0),
+            torch.sin(angle),
+            torch.cos(angle),
+        )
