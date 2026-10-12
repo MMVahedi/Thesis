@@ -61,10 +61,6 @@ def match3_collate_fn(batch: list) -> dict:
         F.pad(item["labels"], (0, max_len - item["shape"]), value=-100)
         for item in batch
     ])
-    attention_mask = torch.stack([
-        F.pad(torch.ones(item["shape"], dtype=torch.int64), (0, max_len - item["shape"]), value=0)
-        for item in batch
-    ])
     position = torch.arange(max_len).unsqueeze(0).expand(len(batch), -1)
 
     return {
@@ -72,8 +68,4 @@ def match3_collate_fn(batch: list) -> dict:
         "position": position.unsqueeze(-1),
         "label": labels,
         "shape": position,
-        "batch_mask": {
-            "attention_mask": attention_mask == 0,
-            "mask": None,
-        },
     }

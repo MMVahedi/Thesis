@@ -1,47 +1,59 @@
+# NEED REVIEW
 """
 Match3 classifier model: task-specific embedding -> stack of shared encoder
-layers (any attention architecture registered in `compgen.models.attentions`)
--> shared per-token binary classification head.
+layers (each with attention and feed-forward modules constructed here) ->
+shared per-token binary classification head.
 
 This reproduces the "33" experiment config from strassen-attention-neurips25's
 `cmds/empirical/match3/hyperparams.json` (M=37, hidden_dim=128, 1 layer,
-2 heads, dropout=0.4, no LayerNorm). All architectures present in the shared
-registry are supported; which architectures a study compares is decided by
-the calling notebook/experiment config.
+2 heads, dropout=0.4, no LayerNorm). Any architecture is supported — the model
+is handed a caller-supplied, already-constructed attention module, which it
+shares across every encoder layer, instantiates the residual ReLU-stack
+feed-forward block
+directly, and hands both to each shared encoder layer; which architectures a
+study compares is decided by the calling notebook/experiment config. Dropout
+lives in the feed-forward block and the classifier; the encoder applies none.
+Initialization is owned here, at the model level: the model accepts a
+`WeightInitializer` policy class (default `XavierInitializer`) and its single
+`_init_weights` method applies that one uniform policy to the whole assembled
+model, so the sub-level modules perform no initialization of their own.
 
 This file is intentionally thin glue: the encoder layer and the head live in
-`compgen/models/encoder.py` and `compgen/models/heads.py`, and the
-task-specific embedding lives in `compgen/models/embeddings/match3.py`.
+`compgen/models/encoder.py` and `compgen/models/heads.py`, the feed-forward
+variants in `compgen/models/ffn.py`, and the task-specific embedding lives in
+`compgen/models/embeddings/match3.py`.
 """
+
+from typing import Type
 
 import torch
 import torch.nn as nn
 
 from compgen.models.embeddings.match3 import Match3Embedding
 from compgen.models.encoder import EncoderLayer
+from compgen.models.ffn import ReluStackFFN
 from compgen.models.heads import TokenClassifier
+from compgen.models.initialization import WeightInitializer, XavierInitializer
 
 
 class Match3Model(nn.Module):
     def __init__(
         self,
         hidden_dim: int,
-        attention_type: str,
+        attention: nn.Module,
         num_layers: int = 1,
         num_heads: int = 1,
-        qk_head_dim: int = None,
-        v_head_dim: int = None,
         dropout_rate: float = 0.0,
         embedding_norm_scalar: float = 1.0,
         use_norm: bool = False,
-        use_attention_dropout: bool = True,
         share_layers: bool = False,
         ffn_depth: int = 3,
         dtype: torch.dtype = torch.float64,
         device: str = "cpu",
+        initializer: Type[WeightInitializer] = XavierInitializer,
     ):
         super().__init__()
-        self.name = f"match3_{attention_type}_h{hidden_dim}_l{num_layers}_heads{num_heads}"
+        self.name = f"match3_h{hidden_dim}_l{num_layers}_heads{num_heads}"
 
         self.embedding = Match3Embedding(
             hidden_dim=hidden_dim,
@@ -53,13 +65,14 @@ class Match3Model(nn.Module):
         def make_layer() -> EncoderLayer:
             return EncoderLayer(
                 hidden_dim=hidden_dim,
-                attention_type=attention_type,
-                num_heads=num_heads,
-                qk_head_dim=qk_head_dim,
-                v_head_dim=v_head_dim,
-                dropout_rate=dropout_rate,
-                use_attention_dropout=use_attention_dropout,
-                ffn_depth=ffn_depth,
+                attention=attention,
+                ffn=ReluStackFFN(
+                    hidden_dim=hidden_dim,
+                    ffn_depth=ffn_depth,
+                    dropout_rate=dropout_rate,
+                    dtype=dtype,
+                    device=device,
+                ),
                 use_norm=use_norm,
                 dtype=dtype,
                 device=device,
@@ -74,6 +87,12 @@ class Match3Model(nn.Module):
         self.classifier = TokenClassifier(
             hidden_dim=hidden_dim, dropout_rate=dropout_rate, dtype=dtype, device=device
         )
+        self.initializer = initializer()
+        self._init_weights()
+
+    def _init_weights(self) -> None:
+        """Apply the model's single initialization policy to the whole model."""
+        self.initializer(self)
 
     def forward(self, batch: dict, return_attention: bool = False):
         hidden_state = self.embedding(batch)
@@ -81,14 +100,13 @@ class Match3Model(nn.Module):
         for layer in self.layers:
             if return_attention:
                 hidden_state, attention = layer(
-                    hidden_state, batch_mask=batch["batch_mask"], return_attention=True
+                    hidden_state, return_attention=True
                 )
                 attentions.append(attention)
             else:
-                hidden_state = layer(hidden_state, batch_mask=batch["batch_mask"])
+                hidden_state = layer(hidden_state)
 
-        logits = self.classifier(hidden_state)
-        y_hat = torch.sigmoid(logits)
+        y_hat = self.classifier(hidden_state)
         if return_attention:
             return y_hat, hidden_state, attentions
         return y_hat, hidden_state

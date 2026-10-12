@@ -1,43 +1,46 @@
 """
-Task-agnostic transformer encoder layer: a registered attention architecture
-plus a feed-forward stack, each wrapped in a plain residual connection.
+Task-agnostic transformer encoder layer: caller-constructed attention and
+feed-forward modules, each wrapped in a plain residual connection.
 
-This module composes only shared pieces (the attention registry in
-`compgen/models/attentions/`) and must not import task-specific code — task
-models under `compgen/models/tasks/` assemble this layer with their own
-task-specific embedding (which is where positional information is added).
+This module composes only shared pieces and the two modules it is handed; it
+does not import task-specific code, the attention registry, or the
+feed-forward module family — task models under `compgen/models/tasks/` resolve
+a registered architecture and a feed-forward variant, construct both modules,
+and assemble this layer with their own task-specific embedding (which is where
+positional information is added).
 
-Feed-forward variants:
-- ``"relu_stack"`` (default): the historical ``ffn_depth`` copies of
-  ``Dropout -> Linear -> ReLU``; unchanged behavior.
-- ``"gelu"``: a two-projection ``Linear(ffn_dim) -> GELU -> Dropout ->
-  Linear(hidden)`` block, matching the reference fuzzy-logic transformer.
-
-Score bias: the layer accepts an optional additive ``score_bias`` and forwards
-it to attention unchanged, but it does not own or compute any position bias.
+The layer applies no dropout and performs no initialization: the modules it is
+handed are used exactly as constructed, and its own normalization modules keep
+PyTorch's defaults. Any dropout lives inside the sub-modules, and the composing
+task model applies its single initialization policy across the whole model. The
+feed-forward variants (a residual ReLU stack and a two-projection GELU block)
+live in `compgen/models/ffn.py`.
 """
 
-from typing import Optional
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
 
 import torch
 import torch.nn as nn
 
-from compgen.models.attentions import ATTENTION_CLASSES
-
-
-def _init_attention_weights(attention: nn.Module) -> None:
-    for name, param in attention.named_parameters():
-        if "weight" in name:
-            nn.init.xavier_normal_(param)
-        elif "bias" in name:
-            nn.init.constant_(param, 0.0)
+if TYPE_CHECKING:  # type-only; keeps this module registry-independent at runtime
+    from compgen.models.attentions.base import BaseAttention
+    from compgen.models.ffn import BaseFeedForward
 
 
 class EncoderLayer(nn.Module):
     """
-    One encoder block: self-attention (any architecture registered in
-    `compgen.models.attentions.ATTENTION_CLASSES`) plus a feed-forward network,
-    each wrapped in a plain residual connection.
+    One encoder block: self-attention (a caller-constructed attention module)
+    plus a feed-forward network (a caller-constructed feed-forward module), each
+    wrapped in a plain residual connection.
+
+    Both modules are built by the caller — a task model resolves a registered
+    architecture and a feed-forward variant, then constructs the modules — so
+    this layer performs no architecture or variant selection or validation and
+    does not initialize or re-initialize the modules it is handed. The layer
+    applies no dropout of its own; any dropout lives inside the attention module
+    or the feed-forward block.
 
     `use_norm=False` skips LayerNorm entirely (the strassen-attention paper's
     setting for Match3), matching `BackboneTransformerLayer` in the reference
@@ -47,90 +50,35 @@ class EncoderLayer(nn.Module):
     def __init__(
         self,
         hidden_dim: int,
-        attention_type: str,
-        num_heads: int = 1,
-        qk_head_dim: Optional[int] = None,
-        v_head_dim: Optional[int] = None,
-        dropout_rate: float = 0.0,
-        attention_dropout_rate: Optional[float] = None,
-        use_attention_dropout: bool = True,
-        attention_bias: bool = False,
-        ffn_depth: int = 3,
-        ffn_type: str = "relu_stack",
-        ffn_dim: Optional[int] = None,
+        attention: BaseAttention,
+        ffn: BaseFeedForward,
         use_norm: bool = False,
         eps: float = 1e-6,
         dtype: torch.dtype = torch.float64,
         device: str = "cpu",
     ):
         super().__init__()
-        if attention_type not in ATTENTION_CLASSES:
-            raise ValueError(f"Unsupported attention type: {attention_type}")
-        if ffn_type not in ("relu_stack", "gelu"):
-            raise ValueError(f"Unsupported ffn_type: {ffn_type}")
 
-        # Attention may use a different dropout rate than the residual/FFN path.
-        if attention_dropout_rate is None:
-            attention_dropout_rate = dropout_rate
-
-        self.attention_type = attention_type
-        self.attention = ATTENTION_CLASSES[attention_type](
-            hidden_dim=hidden_dim,
-            num_heads=num_heads,
-            qk_head_dim=qk_head_dim,
-            v_head_dim=v_head_dim,
-            dropout_rate=attention_dropout_rate,
-            dtype=dtype,
-            bias=attention_bias,
-            device=device,
-            use_dropout=use_attention_dropout,
-        )
-        _init_attention_weights(self.attention)
-
-        ffn_dim = hidden_dim if ffn_dim is None else ffn_dim
-        self.ffn_type = ffn_type
-        if ffn_type == "relu_stack":
-            self.ffn = nn.ModuleList([
-                nn.Sequential(
-                    nn.Dropout(dropout_rate),
-                    nn.Linear(hidden_dim, hidden_dim, dtype=dtype, device=device),
-                    nn.ReLU(),
-                )
-                for _ in range(ffn_depth)
-            ])
-        else:  # "gelu"
-            self.ffn = nn.Sequential(
-                nn.Linear(hidden_dim, ffn_dim, dtype=dtype, device=device),
-                nn.GELU(approximate="tanh"),
-                nn.Dropout(dropout_rate),
-                nn.Linear(ffn_dim, hidden_dim, dtype=dtype, device=device),
-            )
+        self.attention = attention
+        self.ffn = ffn
 
         self.use_norm = use_norm
         if use_norm:
             self.norm1 = nn.LayerNorm(hidden_dim, eps=eps, dtype=dtype, device=device)
             self.norm2 = nn.LayerNorm(hidden_dim, eps=eps, dtype=dtype, device=device)
 
-        self.dropout1 = nn.Dropout(dropout_rate)
-        self.dropout2 = nn.Dropout(dropout_rate)
-
     def forward(
         self,
         hidden_state: torch.Tensor,
-        batch_mask: Optional[dict] = None,
-        score_bias: Optional[torch.Tensor] = None,
         return_attention: bool = False,
     ):
         x = self.norm1(hidden_state) if self.use_norm else hidden_state
-        attention_output, attention_weights = self.attention(
-            hidden_state=x, batch_mask=batch_mask, score_bias=score_bias
-        )
-        hidden_state = hidden_state + self.dropout1(attention_output)
+        attention_output, attention_weights = self.attention(hidden_state=x)
+        hidden_state = hidden_state + attention_output
 
         x = self.norm2(hidden_state) if self.use_norm else hidden_state
-        for layer in self.ffn:
-            x = layer(x)
-        hidden_state = hidden_state + self.dropout2(x)
+        x = self.ffn(x)
+        hidden_state = hidden_state + x
 
         if return_attention:
             return hidden_state, attention_weights

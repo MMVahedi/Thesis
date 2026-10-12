@@ -3,10 +3,12 @@ Shared configuration and mechanics for attention architectures.
 
 Every attention architecture in this package builds on `BaseAttention`, which
 owns the pieces they all need: the head count, the resolved query/key and value
-head dimensions, the score scaler, dropout, dtype/device, padding-mask
-construction, and reconciliation of the aggregated value width back to
-`hidden_dim`. A concrete architecture implements only its score function and
-value aggregation.
+head dimensions, the score scaler, dtype/device, and reconciliation of the
+aggregated value width back to `hidden_dim`. A concrete architecture implements
+only its score function and value aggregation.
+
+Attention is a pure hidden-state transform: it applies no padding masking, no
+dropout, and no projection bias, and takes only the hidden state as input.
 
 Dimension resolution (`qk_head_dim` / `v_head_dim`):
 
@@ -20,6 +22,11 @@ Output-width reconciliation: the aggregated value path has width
 an output projection back to `hidden_dim`. In the default equal-dimension case
 the widths match, so **no output projection is added** and the previous
 parameterization is preserved.
+
+Initialization: attention owns no initialization. A constructed architecture
+keeps PyTorch's default parameter initialization; the composing task model
+applies its single initialization policy across the whole model after
+construction, and the encoder layer never initializes a passed attention module.
 """
 
 import math
@@ -36,19 +43,14 @@ class BaseAttention(nn.Module):
         num_heads: int = 1,
         qk_head_dim: Optional[int] = None,
         v_head_dim: Optional[int] = None,
-        dropout_rate: float = 0.0,
         dtype: torch.dtype = torch.float64,
-        bias: bool = False,
-        mask_padding_value: float = -1e4,
         device: str = "cpu",
-        use_dropout: bool = True,
     ):
         super().__init__()
 
         self.hidden_dim = hidden_dim
         self.num_heads = num_heads
         self.dtype = dtype
-        self.bias = bias
 
         # Resolve per-branch head dimensions (see module docstring).
         if qk_head_dim is None and v_head_dim is None:
@@ -68,18 +70,14 @@ class BaseAttention(nn.Module):
         self.qk_dim = num_heads * qk_head_dim
         self.v_dim = num_heads * v_head_dim
         self.scaler = 1 / math.sqrt(qk_head_dim)
-        self.mask_padding_value = mask_padding_value
         self.device = device
 
-        self.use_dropout = use_dropout
-        if use_dropout:
-            self.dropout = nn.Dropout(dropout_rate)
-
         # Reconcile the value width back to hidden_dim only when it differs.
+        # Projections are always bias-free.
         self.out_proj = None
         if self.v_dim != hidden_dim:
             self.out_proj = nn.Linear(
-                self.v_dim, hidden_dim, bias=bias, dtype=dtype, device=device
+                self.v_dim, hidden_dim, bias=False, dtype=dtype, device=device
             )
 
     # ------------------------------------------------------------------ #
@@ -98,36 +96,3 @@ class BaseAttention(nn.Module):
     def _apply_out_proj(self, x: torch.Tensor) -> torch.Tensor:
         """Reconcile a value-width tensor back to hidden_dim (identity by default)."""
         return self.out_proj(x) if self.out_proj is not None else x
-
-    def _drop_weights(self, weights: torch.Tensor) -> torch.Tensor:
-        return self.dropout(weights) if self.use_dropout else weights
-
-    # ------------------------------------------------------------------ #
-    # Mask helpers
-    # ------------------------------------------------------------------ #
-    def _flatten_padding_mask(self, attention_mask: torch.Tensor) -> torch.Tensor:
-        return attention_mask.flatten(1).to(self.device)
-
-    def construct_mask(self, attention_mask: torch.Tensor, layout: str) -> torch.Tensor:
-        """
-        Expand a `(B, N)` padding mask (True = padding) to a score-shaped
-        boolean mask.
-
-        Layouts:
-        - ``"b1nn"``  -> (B, 1, N, N)          (broadcastable over heads)
-        - ``"bnnn1"`` -> (B, N, N, N, 1)       (pair-level triangular scores)
-        - ``"b1nn2"`` -> (B, 1, N, N*N)        (third-order scores over N*N keys)
-        """
-        mask = self._flatten_padding_mask(attention_mask)
-        if layout == "b1nn":
-            return (mask.unsqueeze(1) + mask.unsqueeze(2)).unsqueeze(1)
-        if layout == "bnnn1":
-            pair = mask.unsqueeze(2).unsqueeze(3)
-            pair = pair + mask.unsqueeze(1).unsqueeze(3)
-            pair = pair + mask.unsqueeze(1).unsqueeze(2)
-            return pair.unsqueeze(4)
-        if layout == "b1nn2":
-            pair = mask.unsqueeze(2) + mask.unsqueeze(1)
-            pair = pair.unsqueeze(3) + mask.unsqueeze(1).unsqueeze(2)
-            return pair.unsqueeze(1).flatten(-2)
-        raise ValueError(f"Unknown mask layout: {layout}")

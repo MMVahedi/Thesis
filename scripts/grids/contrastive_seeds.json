@@ -1,0 +1,6 @@
+{
+  "attention_types": [["softmax"]],
+  "lambda_contrastive": [0.02, 0.05, 0.1],
+  "contrastive_representation": ["row", "code"],
+  "seed": [2024, 2025, 2026]
+}

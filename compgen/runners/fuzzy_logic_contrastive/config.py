@@ -12,13 +12,13 @@ from dataclasses import dataclass
 from typing import List, Optional, Tuple
 
 from compgen.datasets.torch_datasets.fuzzy_logic_online import TASKS
-from compgen.models.attentions import ATTENTION_CLASSES
 
-# Architectures that compose through `EncoderLayer`; `triangular` is pair-level
-# and not sequence-composable, so it is excluded from the runner.
-_SEQUENCE_COMPOSABLE = tuple(
-    name for name in ("softmax", "linear") if name in ATTENTION_CLASSES
-)
+# Attention labels the runner can build. This is an experiment-local list of the
+# architectures this study compares (see run.py, which maps each label to its
+# concrete attention class and constructs the object); it is not a model-layer
+# registry. `triangular` is pair-level and not sequence-composable, so it is
+# excluded.
+SUPPORTED_ATTENTION_TYPES = ("softmax", "linear")
 
 # Contrastive representations derived from the final layer's attention. "matrix"
 # flattens the full `(B, H, N, N)` attention, "row" keeps the response token's
@@ -73,13 +73,8 @@ class ExperimentConfig:
     ffn_dim: Optional[int] = None
     # Dropout on the residual and feed-forward path.
     dropout_rate: float = 0.0
-    # Dropout on the attention weights themselves.
-    attention_dropout_rate: float = 0.0
     # Pre-norm LayerNorm on both attention and feed-forward sublayers.
     use_norm: bool = True
-    # Additive bias in the attention Q/K/V (and out) projections. Disabled by
-    # default so those projections learn no bias term.
-    attention_bias: bool = False
 
     # Optimization.
     learning_rate: float = 1e-3
@@ -94,6 +89,10 @@ class ExperimentConfig:
     # Runtime.
     device: str = "auto"
     track: bool = True
+    # Persist the per-epoch training history next to each variant's metrics as
+    # ``<run_name>.history.jsonl`` (one JSON object per epoch). Disable for
+    # metrics-only runs.
+    save_history: bool = True
     output_dir: str = "results/fuzzy_logic_contrastive"
 
     def __post_init__(self) -> None:
@@ -134,10 +133,10 @@ class ExperimentConfig:
         if not self.attention_types:
             raise ValueError("at least one attention type is required")
         for name in self.attention_types:
-            if name not in _SEQUENCE_COMPOSABLE:
+            if name not in SUPPORTED_ATTENTION_TYPES:
                 raise ValueError(
                     f"Unsupported attention type {name!r}; "
-                    f"choose from {list(_SEQUENCE_COMPOSABLE)}"
+                    f"choose from {list(SUPPORTED_ATTENTION_TYPES)}"
                 )
 
     @property

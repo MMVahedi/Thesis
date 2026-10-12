@@ -6,27 +6,19 @@ Governs how the model layer inside the code package is organized so new attentio
 
 ## Requirements
 
-### Requirement: Single task-agnostic architecture registry
-The model layer SHALL expose all implemented attention architectures through exactly one registry that lives with the architectures themselves and is not owned by any task. Adding a new architecture SHALL require only adding its module and registering it in that one place; task-specific code and notebooks SHALL NOT contain their own mappings of architecture names to classes. The registry SHALL expose the softmax mixer, the linear mixer, and the retained high-order variants (strassen, triangular, third_order) under stable names; the previous `standard` name SHALL no longer be selectable.
+### Requirement: Attention is constructed directly by callers
+The model layer SHALL NOT expose a name-to-architecture mapping or a name-to-constructed-module factory for attention. Every caller that needs an attention module SHALL import the concrete attention class and construct the object directly with the configuration it needs. Adding a new attention architecture SHALL require only adding its module and instantiating it where it is used; no central registry entry SHALL be required.
 
-#### Scenario: All implemented variants are registered
-- **WHEN** the architecture registry is imported from the repository root
-- **THEN** it exposes selectable names for softmax, linear, strassen, triangular, and third_order, and selecting each name constructs an attention module
+#### Scenario: No attention registry or builder exists
+- **WHEN** the attention package is inspected for a name-to-architecture mapping or a name-to-module construction function
+- **THEN** neither exists, and no attention module is selected by a string name anywhere in the model layer
 
-#### Scenario: Retained high-order variants remain available
-- **WHEN** the registry is inspected for the high-order variants
-- **THEN** strassen, triangular, and third_order are still present and constructible, and `standard` is absent
-
-#### Scenario: Old name is rejected
-- **WHEN** a task model is constructed with `attention_type="standard"`
-- **THEN** construction fails with an error naming the unsupported architecture
-
-#### Scenario: No task-local architecture registries
-- **WHEN** task-specific model code under the model layer is searched for architecture-name-to-class mappings defined locally in task files
-- **THEN** zero such local mappings exist; task code obtains architecture classes only from the shared registry
+#### Scenario: Callers construct attention classes directly
+- **WHEN** a task model or a composing experiment needs an attention module
+- **THEN** it imports the concrete attention class and instantiates the object, rather than resolving a string name
 
 ### Requirement: Task models compose shared scaffolding
-The encoder layer (attention block plus feed-forward block with optional normalization and residual connections) and the per-token classification head SHALL be importable, reusable modules that depend on no task-specific code. Each task model file SHALL contain only its task-specific input representation and thin composition of the shared pieces.
+The encoder layer (attention block plus feed-forward block with optional normalization and residual connections) and the per-token classification head SHALL be importable, reusable modules that depend on no task-specific code. Each task model file SHALL contain only its task-specific input representation and thin composition of the shared pieces. A task model SHALL accept a caller-supplied, already-constructed attention module and SHALL pass that constructed module into each of its encoder layers. The task model SHALL NOT resolve, select, or validate an attention architecture name itself.
 
 #### Scenario: Shared scaffolding is task-agnostic
 - **WHEN** the shared encoder-layer and classification-head modules are imported from the repository root and their imports are inspected
@@ -34,31 +26,32 @@ The encoder layer (attention block plus feed-forward block with optional normali
 
 #### Scenario: Task file is thin glue
 - **WHEN** a task model file under the model layer is inspected
-- **THEN** it defines (or imports) only its task-specific embedding and composes the shared encoder layer, shared head, and a registered architecture — with no duplicated encoder or head definitions
+- **THEN** it defines (or imports) only its task-specific embedding and composes the shared encoder layer and shared head, obtaining attention solely from the caller-supplied attention module and defining no encoder or head of its own
 
-### Requirement: Any registered architecture is usable by a task model
-A task model SHALL accept any architecture name present in the shared registry and SHALL reject only names absent from it. Which architectures a particular study compares SHALL be decided by the calling notebook or experiment configuration, not restricted inside the task model.
+#### Scenario: Task model constructs the attention it selected
+- **WHEN** a task model is constructed with a caller-supplied, already-constructed attention module and the resulting encoder stack is inspected
+- **THEN** each encoder layer's attention is that supplied module, and the task model's public construction surface takes attention as a constructed module rather than as an architecture name or a factory
 
-#### Scenario: Every registered variant constructs
-- **WHEN** the Match3 task model is constructed once with each name in the shared registry
-- **THEN** every construction succeeds and the resulting model exposes the selected architecture in its encoder stack
+### Requirement: Task models accept a caller-supplied attention module
+A task model SHALL accept a caller-supplied, already-constructed attention module and SHALL use that same module as the attention of every encoder layer it composes, so the module and its parameters are shared across the layers. The task model SHALL NOT restrict which attention may be supplied, SHALL NOT perform any name-based allow-list or validation, and SHALL use exactly the module supplied. Which architectures a particular study compares SHALL be decided by the calling notebook or experiment configuration, not restricted inside the task model.
 
-#### Scenario: Unknown architecture name is rejected
-- **WHEN** the Match3 task model is constructed with a name not present in the shared registry
-- **THEN** construction fails with an error naming the unsupported architecture
+#### Scenario: Every caller-supplied attention module composes
+- **WHEN** the Match3 or fuzzy-logic task model is constructed with a supplied attention module of a given attention architecture
+- **THEN** construction succeeds and the resulting encoder stack exposes that attention architecture
 
-### Requirement: Public task API stays stable
-The Match3 task model's public interface SHALL remain unchanged across this reorganization: its constructor parameters, its output on forward, and its input contract (the batch mapping produced by the dataset layer's collate function). Because the architecture-name rename is a deliberate breaking change to selectable names, existing notebooks SHALL be migrated from `standard` to `softmax` as part of this change; the notebook code that imports the task model, constructs it, and consumes its output is otherwise unchanged.
+#### Scenario: One module is shared across encoder layers
+- **WHEN** a task model with multiple encoder layers is constructed with a supplied attention module
+- **THEN** every encoder layer's attention is that same module instance, so its parameters are shared, while each layer's feed-forward block remains distinct
 
-#### Scenario: Notebook import and usage unchanged
-- **WHEN** a migrated notebook's import of the Match3 task model and its construction with softmax or strassen attention are executed from the repository root
-- **THEN** the import resolves, construction succeeds with the same parameters as before, and forward over a batch from the dataset layer produces the same output structure (probabilities and final hidden states) as before
+#### Scenario: Task model performs no architecture validation
+- **WHEN** a task model is constructed with a supplied attention module
+- **THEN** the task model performs no name-based lookup or rejection and uses exactly the module supplied
 
 ### Requirement: Shared configurable attention interface
-All attention architectures in the registry SHALL be built on one shared configuration interface that exposes the number of attention heads and independently configurable query/key and value head dimensions. When only a single head dimension is supplied, the query/key and value head dimensions SHALL default to the same value; when distinct values are supplied, the architecture SHALL use them independently. Supplying only a hidden dimension and a head count SHALL reproduce the previous single-head-dimension behavior.
+All attention architectures in the model layer SHALL be built on one shared configuration interface that exposes the number of attention heads and independently configurable query/key and value head dimensions. When only a single head dimension is supplied, the query/key and value head dimensions SHALL default to the same value; when distinct values are supplied, the architecture SHALL use them independently. Supplying only a hidden dimension and a head count SHALL reproduce the previous single-head-dimension behavior.
 
 #### Scenario: Head count is configurable for every architecture
-- **WHEN** each registered architecture is constructed with a given head count and hidden dimension
+- **WHEN** each attention architecture is constructed with a given head count and hidden dimension
 - **THEN** construction succeeds and the resulting module reports that head count, splitting its query/key and value projections across that many heads
 
 #### Scenario: Query/key and value head dimensions default to equal
@@ -74,22 +67,64 @@ All attention architectures in the registry SHALL be built on one shared configu
 - **THEN** both constructions succeed and both expose the requested head and dimension configuration
 
 ### Requirement: Softmax and linear attention mixers
-The registry SHALL expose two sibling mixers that share the same projection, scaling, masking, and multi-head splitting: a softmax attention whose attention weights are normalized with softmax, and a linear attention whose attention weights are the scaled scores without the final softmax normalization.
+The model layer SHALL provide two sibling mixers that share the same projection, scaling, and multi-head splitting: a softmax attention whose attention weights are normalized with softmax, and a linear attention whose attention weights are the scaled scores without the final softmax normalization. Neither mixer SHALL apply masking or dropout to its weights.
 
 #### Scenario: Linear is softmax without the final normalization
 - **WHEN** the softmax and linear architectures are constructed with identical configuration and applied to the same input, and the softmax mixer's normalization is removed
 - **THEN** the linear mixer's output matches the unnormalized softmax path
 
 #### Scenario: Both mixers are selectable
-- **WHEN** the registry is imported from the repository root
-- **THEN** both `softmax` and `linear` are selectable names that construct attention modules
+- **WHEN** the softmax and linear attention classes are imported from the repository root and instantiated directly
+- **THEN** both construct attention modules
+
+### Requirement: Attention is a hidden-state-only transform
+Every attention architecture in the model layer SHALL compute its output from the token hidden states alone. Attention `forward` SHALL accept the hidden states and the optional additive `score_bias`, and SHALL NOT accept a mask argument. Attention construction SHALL NOT accept a dropout rate, a dropout toggle, a projection-bias flag, or a padding-mask value. Attention weights SHALL be neither masked nor dropped out.
+
+#### Scenario: No mask argument is accepted
+- **WHEN** an attention architecture's `forward` is called with hidden states and an optional additive score bias
+- **THEN** it returns the attention output and attention weights, and passing a batch-mask argument is rejected
+
+#### Scenario: Removed configuration knobs are rejected
+- **WHEN** any attention architecture is constructed with `dropout_rate`, `use_dropout`, `bias`, or `mask_padding_value`
+- **THEN** construction fails because the parameter is not accepted
+
+#### Scenario: No dropout is applied to attention weights
+- **WHEN** an attention architecture runs in training mode with dropout once configured externally
+- **THEN** the returned attention weights equal the unmasked, un-dropped normalization of its scores
+
+#### Scenario: Head and dimension configuration is preserved
+- **WHEN** each attention architecture is constructed with a hidden dimension, a head count, and optionally distinct query/key and value head dimensions
+- **THEN** construction succeeds with the same head and dimension behavior as before the simplification
+
+### Requirement: Task models consume an unmasked batch
+The fuzzy-logic and Match3 task models SHALL construct their attention without dropout or bias configuration, and their forward paths SHALL NOT accept, read, or forward a batch mask. The Match3 task model SHALL NOT expose an attention-dropout constructor parameter; its feed-forward dropout SHALL remain configurable.
+
+#### Scenario: Fuzzy-logic model forward takes no mask
+- **WHEN** the fuzzy-logic task model's forward is called with inputs
+- **THEN** it produces predictions and, on request, per-layer attention weights, without any mask being supplied or forwarded to attention
+
+#### Scenario: Match3 model forward takes no mask
+- **WHEN** the Match3 task model's forward is called with a collated batch
+- **THEN** it produces per-token probabilities and final hidden states without reading a batch-mask entry from the batch
+
+#### Scenario: Match3 attention-dropout parameter is gone
+- **WHEN** the Match3 task model is constructed with `use_attention_dropout`
+- **THEN** construction fails because the parameter is not accepted, while the feed-forward dropout rate remains configurable
+
+#### Scenario: Attention-returning contract is unchanged
+- **WHEN** the fuzzy-logic or Match3 task model is asked for attention weights
+- **THEN** each still returns per-layer weights of shape `(batch, num_heads, length, length)`
 
 ### Requirement: Documentation matches the model-layer layout
-`AGENTS.md` and the root `README.md` SHALL describe the model layer's organization: where architectures and their registry live, where shared scaffolding lives, and the convention for adding a task (task-specific embedding plus thin task file). Every model-layer path they document SHALL exist.
+`AGENTS.md` and the root `README.md` SHALL describe the model layer's organization: where attention architectures and their individual classes live, where shared scaffolding lives, and the convention for adding a task (task-specific embedding plus thin task file), including that callers construct attention directly with no name-to-architecture registry and no construction helper. Every model-layer path they document SHALL exist.
 
 #### Scenario: Documented model-layer paths exist
 - **WHEN** every repository-relative path mentioned for the model layer in `AGENTS.md` and `README.md` is checked against the filesystem
 - **THEN** each path exists in the documented form, and the add-a-task convention matches the actual directory structure
+
+#### Scenario: Documentation describes direct attention construction
+- **WHEN** `AGENTS.md` and the root `README.md` are inspected for how attention is selected
+- **THEN** they describe callers importing and constructing attention classes directly, and mention no name-to-architecture registry or attention construction helper
 
 ### Requirement: Reusable model blocks and fixed positional encoding
 The model layer SHALL provide reusable, task-agnostic blocks that compose into full sequence models: a fixed absolute positional encoding block that produces a deterministic position vector for each sequence position, feed-forward block support for both the existing residual ReLU stack and a two-projection GELU residual block, and a regression head that maps token hidden states to a scalar prediction after a final normalization. The model layer SHALL NOT provide a relative-position bias block.
@@ -107,26 +142,26 @@ The model layer SHALL provide reusable, task-agnostic blocks that compose into f
 - **THEN** it returns a tensor of shape `(batch, length, 1)`
 
 ### Requirement: Attention accepts an additive score bias
-The sequence-composable attention architectures registered in the shared registry (softmax and linear) SHALL accept an optional additive score bias and add it to the scaled query/key scores before normalization, so a relative-position or other bias can be incorporated without reimplementing attention outside the registry.
+The sequence-composable attention architectures provided by the model layer (softmax and linear) SHALL accept an optional additive score bias and add it to the scaled query/key scores before normalization, so a relative-position or other bias can be incorporated without reimplementing attention outside the model layer.
 
 #### Scenario: Bias is added to the scores
 - **WHEN** the same attention is applied with and without a non-zero additive bias and all other inputs are equal
 - **THEN** the resulting attention weights differ and keep the same shape
 
 ### Requirement: Fuzzy-logic regression task model
-The model layer SHALL provide a fuzzy-logic regression task model that composes a task-specific input embedding, a configurable stack of encoder layers whose attention is chosen from the shared registry, and the regression head, and SHALL accept any registered sequence-composable attention architecture name. The task-specific input embedding SHALL add a fixed absolute positional encoding to its projected token representations.
+The model layer SHALL provide a fuzzy-logic regression task model that composes a task-specific input embedding, a configurable stack of encoder layers whose attention comes from a caller-supplied, already-constructed attention module shared across the stack, and the regression head, and SHALL accept any attention module a caller supplies. The task-specific input embedding SHALL add a fixed absolute positional encoding to its projected token representations.
 
 #### Scenario: Model reproduces the reference architecture
-- **WHEN** the fuzzy-logic task model is constructed with the reference configuration (two layers, hidden width 128, feed-forward width 256, 8 heads, query/key and value width 16, fixed absolute positional encoding, GELU feed-forward)
+- **WHEN** the fuzzy-logic task model is constructed with an attention module configured for the reference (8 heads, query/key and value width 16) and the reference task configuration (two layers, hidden width 128, feed-forward width 256, fixed absolute positional encoding, GELU feed-forward)
 - **THEN** it produces per-token scalar predictions and exposes one attention-weight matrix per layer
 
 #### Scenario: Registered architectures are accepted
-- **WHEN** the fuzzy-logic task model is constructed with each registered sequence-composable attention name
+- **WHEN** the fuzzy-logic task model is constructed with a supplied attention module for each provided sequence-composable attention architecture
 - **THEN** every construction succeeds and the selected architecture appears in the encoder stack
 
 #### Scenario: Unknown architecture name is rejected
-- **WHEN** the fuzzy-logic task model is constructed with a name absent from the shared registry
-- **THEN** construction fails with an error naming the unsupported architecture
+- **WHEN** the fuzzy-logic task model is constructed with an architecture name string instead of an attention module
+- **THEN** construction fails because the model takes attention as a caller-supplied module, not an architecture name
 
 #### Scenario: Position enters once through the input embedding
 - **WHEN** the fuzzy-logic task model processes a batch
@@ -146,3 +181,97 @@ A task model in the model layer SHALL be able to return its per-layer attention 
 #### Scenario: Fuzzy-logic and Match3 agree on the attention contract
 - **WHEN** the fuzzy-logic task model and the Match3 task model are each asked for attention weights
 - **THEN** both provide per-layer attention weights with the same `(batch, heads, query, key)` layout that the analytics layer consumes
+
+### Requirement: Encoder layer consumes a constructed attention module
+The shared encoder layer SHALL accept an already-constructed attention module and SHALL use that module as its self-attention. It SHALL NOT accept an attention architecture name, SHALL NOT look up or validate architecture names, and SHALL depend on no architecture registry. Constructing the attention module SHALL be the responsibility of the task model or other caller that composes the encoder layer.
+
+#### Scenario: Constructed module becomes the layer's attention
+- **WHEN** an encoder layer is constructed with a constructed attention module and applied to a hidden state
+- **THEN** the layer uses that exact module for self-attention and returns a hidden state of the same shape as its input
+
+#### Scenario: Encoder layer takes no architecture name
+- **WHEN** the encoder layer's construction surface is inspected
+- **THEN** it accepts no architecture-name string and performs no registry lookup or architecture-name validation
+
+#### Scenario: Encoder layer is registry-independent
+- **WHEN** the shared encoder-layer module is imported from the repository root and its imports are inspected
+- **THEN** it imports neither any attention-architecture registry nor any task-specific module
+
+### Requirement: Encoder layer consumes a constructed feed-forward module
+The shared encoder layer SHALL accept an already-constructed feed-forward module and SHALL use that module as its feed-forward sublayer. It SHALL NOT accept a feed-forward variant name, depth, or width configuration, SHALL NOT select or validate a feed-forward variant, and SHALL depend on no feed-forward registry. Constructing the feed-forward module from the selected variant and configuration SHALL be the responsibility of the task model or other caller that composes the encoder layer.
+
+#### Scenario: Constructed module becomes the layer's feed-forward
+- **WHEN** an encoder layer is constructed with a constructed feed-forward module and applied to a hidden state
+- **THEN** the layer uses that module for its feed-forward sublayer and returns a hidden state of the same shape as its input
+
+#### Scenario: Encoder layer takes no feed-forward variant configuration
+- **WHEN** the encoder layer's construction surface is inspected
+- **THEN** it accepts no feed-forward variant name, depth, or width parameter and performs no feed-forward variant selection or validation
+
+### Requirement: Model-level weight initialization
+The model layer SHALL centralize weight initialization at the task-model level. The initialization schemes SHALL be classes owned by the model layer — an abstract weight-initialization policy base class with one concrete subclass per scheme (a xavier scheme, the reference truncated-normal scheme, and a no-op that preserves PyTorch's defaults) — and no string name or string-keyed mapping SHALL identify or select a scheme. A task model SHALL own a single initialization method that applies one uniform policy to the whole model it composes. Sub-level modules — attention architectures, feed-forward variants, prediction heads, task embeddings, and the encoder layer — SHALL NOT accept an initialization policy and SHALL NOT initialize their own weights.
+
+#### Scenario: Initialization schemes live in one place
+- **WHEN** the model layer is inspected for how the initialization schemes are defined
+- **THEN** the schemes are defined once in the model layer's initialization module, and no attention, feed-forward, head, embedding, or task-model module contains an inline xavier-normal or truncated-normal initialization loop of its own
+
+#### Scenario: Each scheme is a distinct class, not a string
+- **WHEN** the model layer's initialization module is inspected for how a scheme is represented and selected
+- **THEN** each scheme is a distinct concrete subclass of the abstract policy base class, and no string name, string type field, or string-keyed lookup is used to identify or select a scheme
+
+#### Scenario: Only the task model initializes its modules
+- **WHEN** a task model is constructed
+- **THEN** exactly one initialization method applies the model's single policy across every sub-module it composes
+
+#### Scenario: Sub-level modules carry no initialization concern
+- **WHEN** any attention architecture, feed-forward variant, prediction head, task embedding, or encoder layer is inspected
+- **THEN** its construction surface accepts no initialization policy and it applies no self-initialization to its parameters
+
+#### Scenario: A non-default initializer overrides the model's scheme
+- **WHEN** a task model is constructed with a supplied non-default policy class
+- **THEN** all of the model's Linear and Embedding parameters follow that scheme
+
+#### Scenario: Each model applies one uniform default scheme
+- **WHEN** the Match3 task model and the fuzzy-logic task model are each constructed with their default initializer
+- **THEN** the fuzzy-logic task model applies the reference scheme across its whole composed model and the Match3 task model applies the xavier scheme across its whole composed model
+
+### Requirement: Encoder layer applies no dropout
+The encoder layer SHALL apply no dropout to its residual paths: its attention and feed-forward residual connections SHALL add the sub-module outputs directly. Any dropout SHALL live inside the sub-modules the layer is given (the attention module and the feed-forward block), and the feed-forward block's dropout SHALL remain configurable through its construction.
+
+#### Scenario: Residual connections add without dropout
+- **WHEN** an encoder layer with constructed sub-modules processes a hidden state in training mode
+- **THEN** its residual connections add the attention and feed-forward outputs without applying any dropout
+
+#### Scenario: Feed-forward dropout lives in the block
+- **WHEN** a feed-forward block is constructed with a dropout rate and handed to the encoder layer
+- **THEN** that dropout is applied inside the block and the encoder layer holds no dropout module
+
+### Requirement: Feed-forward variants are constructible modules
+The model layer SHALL provide the residual ReLU-stack feed-forward and the two-projection GELU feed-forward as constructible modules that a task model instantiates directly and passes into each encoder layer. The model layer SHALL NOT provide a name-keyed feed-forward factory, and there SHALL be no feed-forward variant-name mapping or lookup.
+
+#### Scenario: Both variants forward at unchanged width
+- **WHEN** a feed-forward module is constructed for each supported variant and applied to a hidden state
+- **THEN** each returns a tensor of the same shape as its input
+
+#### Scenario: Task model constructs the feed-forward directly
+- **WHEN** a task model is constructed and its encoder stack is inspected
+- **THEN** each encoder layer's feed-forward is a directly instantiated module of the variant the task needs, constructed without a name-to-module factory
+
+#### Scenario: No feed-forward factory is exposed
+- **WHEN** the model layer's feed-forward module is searched for a name-to-module construction function
+- **THEN** no such factory exists and no feed-forward variant-name lookup is performed
+
+### Requirement: Classification head returns probabilities
+The per-token binary classification head SHALL apply a sigmoid to its single output logit and return per-token probabilities bounded within the closed interval `[0, 1]`, rather than raw logits. (Sigmoid is mathematically interior to `(0, 1)`; in floating point it may round to the endpoints for large-magnitude logits.) The sigmoid SHALL be part of the classification head and SHALL NOT be applied again by any task model that composes it. Because the head exposes probabilities and not logits, binary-classification training SHALL consume the head output with a binary cross-entropy objective that expects probabilities. The scalar regression head SHALL remain unchanged and SHALL NOT apply a sigmoid to its output.
+
+#### Scenario: Classification head emits probabilities
+- **WHEN** the per-token classification head is applied to hidden states of shape `(batch, length, hidden)`
+- **THEN** it returns a tensor of shape `(batch, length, 1)` whose values all lie within the closed interval `[0, 1]`
+
+#### Scenario: Task model applies no additional sigmoid
+- **WHEN** the Match3 task model's `forward` is called with a collated batch
+- **THEN** its returned per-token predictions lie within `[0, 1]` and equal the classification head's output applied to the final hidden states, with no extra normalization applied in the task model
+
+#### Scenario: Regression head is unaffected
+- **WHEN** the scalar regression head is applied to hidden states
+- **THEN** it returns one scalar per token whose values are not constrained to `(0, 1)`

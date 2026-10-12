@@ -20,12 +20,21 @@ import torch
 
 from compgen import tracking
 from compgen.datasets.torch_datasets.fuzzy_logic_online import FuzzyLogicOnlineGenerator
+from compgen.models.attentions import LinearAttention, SoftmaxAttention
 from compgen.models.tasks.fuzzy_logic import FuzzyLogicModel
 from compgen.runners.fuzzy_logic_contrastive.config import ExperimentConfig, Variant
 from compgen.runners.fuzzy_logic_contrastive.step import forward_batch, make_step_fn
 from compgen.training import fit
 
 _SPLITS = ("train", "test", "id", "ood")
+
+# Experiment-local label -> concrete attention class. The model layer has no
+# registry; this runnable experiment constructs attention objects here. Only the
+# architectures this study compares are listed.
+_ATTENTION_BY_LABEL = {
+    "softmax": SoftmaxAttention,
+    "linear": LinearAttention,
+}
 
 
 def resolve_device(requested: str) -> torch.device:
@@ -59,20 +68,27 @@ def sample_batches(generator, config, split, count, device):
 
 
 def build_model(config: ExperimentConfig, attention_type: str, device) -> FuzzyLogicModel:
+    attention_cls = _ATTENTION_BY_LABEL[attention_type]
+
+    def attention_factory() -> torch.nn.Module:
+        return attention_cls(
+            hidden_dim=config.hidden_dim,
+            num_heads=config.num_heads,
+            qk_head_dim=config.qk_head_dim,
+            v_head_dim=config.v_head_dim,
+            dtype=torch.float64,
+            device=str(device),
+        )
+
     return FuzzyLogicModel(
         input_dim=config.input_dim,
+        attention_factory=attention_factory,
         hidden_dim=config.hidden_dim,
-        attention_type=attention_type,
         num_layers=config.num_layers,
         num_heads=config.num_heads,
-        qk_head_dim=config.qk_head_dim,
-        v_head_dim=config.v_head_dim,
-        ffn_type="gelu",
         ffn_dim=config.ffn_dim,
         dropout_rate=config.dropout_rate,
-        attention_dropout_rate=config.attention_dropout_rate,
         use_norm=config.use_norm,
-        attention_bias=config.attention_bias,
         dtype=torch.float64,
         device=str(device),
     )
@@ -153,6 +169,21 @@ def _loggable(metrics: dict) -> dict:
     return {k: float(v) for k, v in metrics.items() if isinstance(v, (int, float))}
 
 
+def _write_history(history, path: Path) -> None:
+    """Write the per-epoch training history as one JSON object per line.
+
+    Each line carries the epoch index, the epoch's mean training loss, the
+    training step metrics, and (when present) that epoch's evaluation metrics.
+    """
+    with path.open("w") as stream:
+        for record in history:
+            row = {"epoch": record.epoch, "train_loss": record.train_loss}
+            row.update(record.train_metrics)
+            if record.eval_metrics is not None:
+                row.update({f"eval_{key}": value for key, value in record.eval_metrics.items()})
+            stream.write(json.dumps(row, sort_keys=True) + "\n")
+
+
 def run_variant(
     config: ExperimentConfig, variant: Variant, device, output_dir: Path
 ) -> dict:
@@ -230,6 +261,8 @@ def run_variant(
     output_dir.mkdir(parents=True, exist_ok=True)
     with (output_dir / f"{run_name}.json").open("w") as stream:
         json.dump(metrics, stream, indent=2, sort_keys=True)
+    if config.save_history and result.history:
+        _write_history(result.history, output_dir / f"{run_name}.history.jsonl")
     return metrics
 
 

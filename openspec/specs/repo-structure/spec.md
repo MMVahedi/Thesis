@@ -78,8 +78,8 @@ The retained experiment directory under `compgen/experiments/` SHALL stand alone
 - **THEN** no such references remain
 
 ### Requirement: Generated artifacts stay untracked
-Generated datasets, training artifacts, and build outputs SHALL remain untracked: `.gitignore` SHALL cover `data/`, `*.jsonl`, `*.zip`, logs, checkpoints, and model binaries, and the reorganization SHALL NOT bring any generated artifact under version control.
+Generated datasets, training artifacts, experiment-tracking run output, and build outputs SHALL remain untracked: `.gitignore` SHALL cover `data/`, `*.jsonl`, `*.zip`, logs, checkpoints, model binaries, and the MLflow local run output (`mlflow.db` and the `mlartifacts/` directory), and no change SHALL bring any generated artifact under version control.
 
 #### Scenario: Ignore rules cover all artifact locations
-- **WHEN** `.gitignore` is inspected after the reorganization
-- **THEN** it matches every artifact pattern previously documented (including `data/`) plus `*.zip`, and `git status` reports no generated dataset, checkpoint, or archive files as untracked work
+- **WHEN** `.gitignore` is inspected
+- **THEN** it matches every artifact pattern previously documented (including `data/` and `*.zip`) plus the MLflow local run output `mlflow.db` and `mlartifacts/`, and `git status` reports no generated dataset, checkpoint, archive, or tracking-run files as untracked work

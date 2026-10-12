@@ -4,54 +4,64 @@ encoder layers (any sequence-composable architecture in
 `compgen.models.attentions`) -> shared regression head.
 
 The model composes the reference fuzzy-logic transformer skeleton (pre-norm
-layers, a GELU feed-forward block, multi-head attention from the shared
-registry, and the reference initialization). Two deliberate divergences from
-the reference: position is supplied by a fixed absolute positional encoding
-added to the input embedding rather than by a learned bias inside attention,
-and attention dropout uses the package's standard per-element dropout rather
-than the reference's single mask broadcast across batch and heads.
+layers, a GELU feed-forward block, multi-head attention from any attention
+class, and the reference initialization). The model is handed a
+caller-supplied, already-constructed attention module — the same module is
+shared across every encoder layer — instantiates the GELU feed-forward block
+directly, and hands both to the
+shared encoder layer, which performs no selection and applies no dropout. Two
+deliberate divergences from the reference: position is supplied by a fixed
+absolute positional encoding
+added to the input embedding rather than by a learned bias inside attention, and
+attention applies no dropout at all (attention is a pure hidden-state
+transform).
+
+Initialization is owned here, at the model level: the model accepts a
+`WeightInitializer` policy class (default `ReferenceInitializer`) and its single
+`_init_weights` method applies that one uniform policy to the whole assembled
+model — including the caller-supplied attention — so the sub-level modules
+perform no initialization of their own.
 
 This file is thin glue: the embedding (including the fixed positional encoding)
 lives in `compgen/models/embeddings/fuzzy_logic.py`, the encoder layer in
-`compgen/models/encoder.py`, and the head in `compgen/models/heads.py`.
+`compgen/models/encoder.py`, the feed-forward variants in
+`compgen/models/ffn.py`, and the head in `compgen/models/heads.py`.
 """
+
+from typing import Type
 
 import torch
 import torch.nn as nn
 
 from compgen.models.embeddings.fuzzy_logic import FuzzyLogicEmbedding
 from compgen.models.encoder import EncoderLayer
+from compgen.models.ffn import GeluFFN
 from compgen.models.heads import RegressionHead
-from compgen.models.initialization import init_reference_weights
+from compgen.models.initialization import ReferenceInitializer, WeightInitializer
 
 
 class FuzzyLogicModel(nn.Module):
     def __init__(
         self,
         input_dim: int,
+        attention: nn.Module,
         hidden_dim: int = 128,
-        attention_type: str = "softmax",
         num_layers: int = 2,
         num_heads: int = 8,
-        qk_head_dim: int = 2,
-        v_head_dim: int = 2,
-        ffn_type: str = "gelu",
         ffn_dim: int = 256,
         dropout_rate: float = 0.0,
-        attention_dropout_rate: float = 0.1,
         use_norm: bool = True,
-        attention_bias: bool = True,
         eps: float = 1e-6,
         dtype: torch.dtype = torch.float64,
         device: str = "cpu",
+        initializer: Type[WeightInitializer] = ReferenceInitializer,
     ):
         super().__init__()
-        self.name = f"fuzzy_logic_{attention_type}_h{hidden_dim}_l{num_layers}_heads{num_heads}"
+        self.name = f"fuzzy_logic_h{hidden_dim}_l{num_layers}_heads{num_heads}"
 
         self.embedding = FuzzyLogicEmbedding(
             input_dim=input_dim,
             hidden_dim=hidden_dim,
-            dropout_rate=dropout_rate,
             dtype=dtype,
             device=device,
         )
@@ -59,15 +69,14 @@ class FuzzyLogicModel(nn.Module):
         self.layers = nn.ModuleList([
             EncoderLayer(
                 hidden_dim=hidden_dim,
-                attention_type=attention_type,
-                num_heads=num_heads,
-                qk_head_dim=qk_head_dim,
-                v_head_dim=v_head_dim,
-                dropout_rate=dropout_rate,
-                attention_dropout_rate=attention_dropout_rate,
-                attention_bias=attention_bias,
-                ffn_type=ffn_type,
-                ffn_dim=ffn_dim,
+                attention=attention,
+                ffn=GeluFFN(
+                    hidden_dim=hidden_dim,
+                    ffn_dim=ffn_dim,
+                    dropout_rate=dropout_rate,
+                    dtype=dtype,
+                    device=device,
+                ),
                 use_norm=use_norm,
                 eps=eps,
                 dtype=dtype,
@@ -77,7 +86,12 @@ class FuzzyLogicModel(nn.Module):
         ])
 
         self.head = RegressionHead(hidden_dim, eps=eps, dtype=dtype, device=device)
-        init_reference_weights(self)
+        self.initializer = initializer()
+        self._init_weights()
+
+    def _init_weights(self) -> None:
+        """Apply the model's single initialization policy to the whole model."""
+        self.initializer(self)
 
     @staticmethod
     def _to_input(x):
@@ -89,7 +103,7 @@ class FuzzyLogicModel(nn.Module):
         attentions = []
         for layer in self.layers:
             hidden_state, attention = layer(
-                hidden_state, batch_mask=None, return_attention=True
+                hidden_state, return_attention=True
             )
             attentions.append(attention)
 
