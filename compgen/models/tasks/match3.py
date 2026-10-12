@@ -1,17 +1,16 @@
 # NEED REVIEW
 """
 Match3 classifier model: task-specific embedding -> stack of shared encoder
-layers (each with attention and feed-forward modules constructed here) ->
+layers (each with caller-supplied attention and feed-forward modules) ->
 shared per-token binary classification head.
 
 This reproduces the "33" experiment config from strassen-attention-neurips25's
 `cmds/empirical/match3/hyperparams.json` (M=37, hidden_dim=128, 1 layer,
 2 heads, dropout=0.4, no LayerNorm). Any architecture is supported — the model
-is handed a caller-supplied, already-constructed attention module, which it
-shares across every encoder layer, instantiates the residual ReLU-stack
-feed-forward block
-directly, and hands both to each shared encoder layer; which architectures a
-study compares is decided by the calling notebook/experiment config. Dropout
+is handed caller-supplied, already-constructed attention and feed-forward
+modules, which it shares across every encoder layer, and hands both to each
+shared encoder layer; which architectures a study compares is decided by the
+calling notebook/experiment config (see `compgen/models/factory.py`). Dropout
 lives in the feed-forward block and the classifier; the encoder applies none.
 Initialization is owned here, at the model level: the model accepts a
 `WeightInitializer` policy class (default `XavierInitializer`) and its single
@@ -31,7 +30,6 @@ import torch.nn as nn
 
 from compgen.models.embeddings.match3 import Match3Embedding
 from compgen.models.encoder import EncoderLayer
-from compgen.models.ffn import ReluStackFFN
 from compgen.models.heads import TokenClassifier
 from compgen.models.initialization import WeightInitializer, XavierInitializer
 
@@ -41,18 +39,28 @@ class Match3Model(nn.Module):
         self,
         hidden_dim: int,
         attention: nn.Module,
+        ffn: nn.Module,
         num_layers: int = 1,
         num_heads: int = 1,
         dropout_rate: float = 0.0,
         embedding_norm_scalar: float = 1.0,
         use_norm: bool = False,
         share_layers: bool = False,
-        ffn_depth: int = 3,
         dtype: torch.dtype = torch.float64,
         device: str = "cpu",
         initializer: Type[WeightInitializer] = XavierInitializer,
     ):
         super().__init__()
+        if not isinstance(attention, nn.Module):
+            raise TypeError(
+                "attention must be a constructed nn.Module, not an architecture "
+                "name or a factory"
+            )
+        if not isinstance(ffn, nn.Module):
+            raise TypeError(
+                "ffn must be a constructed nn.Module, not a feed-forward variant "
+                "name or a factory"
+            )
         self.name = f"match3_h{hidden_dim}_l{num_layers}_heads{num_heads}"
 
         self.embedding = Match3Embedding(
@@ -66,13 +74,7 @@ class Match3Model(nn.Module):
             return EncoderLayer(
                 hidden_dim=hidden_dim,
                 attention=attention,
-                ffn=ReluStackFFN(
-                    hidden_dim=hidden_dim,
-                    ffn_depth=ffn_depth,
-                    dropout_rate=dropout_rate,
-                    dtype=dtype,
-                    device=device,
-                ),
+                ffn=ffn,
                 use_norm=use_norm,
                 dtype=dtype,
                 device=device,

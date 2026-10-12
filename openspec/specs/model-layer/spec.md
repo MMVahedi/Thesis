@@ -6,19 +6,8 @@ Governs how the model layer inside the code package is organized so new attentio
 
 ## Requirements
 
-### Requirement: Attention is constructed directly by callers
-The model layer SHALL NOT expose a name-to-architecture mapping or a name-to-constructed-module factory for attention. Every caller that needs an attention module SHALL import the concrete attention class and construct the object directly with the configuration it needs. Adding a new attention architecture SHALL require only adding its module and instantiating it where it is used; no central registry entry SHALL be required.
-
-#### Scenario: No attention registry or builder exists
-- **WHEN** the attention package is inspected for a name-to-architecture mapping or a name-to-module construction function
-- **THEN** neither exists, and no attention module is selected by a string name anywhere in the model layer
-
-#### Scenario: Callers construct attention classes directly
-- **WHEN** a task model or a composing experiment needs an attention module
-- **THEN** it imports the concrete attention class and instantiates the object, rather than resolving a string name
-
 ### Requirement: Task models compose shared scaffolding
-The encoder layer (attention block plus feed-forward block with optional normalization and residual connections) and the per-token classification head SHALL be importable, reusable modules that depend on no task-specific code. Each task model file SHALL contain only its task-specific input representation and thin composition of the shared pieces. A task model SHALL accept a caller-supplied, already-constructed attention module and SHALL pass that constructed module into each of its encoder layers. The task model SHALL NOT resolve, select, or validate an attention architecture name itself.
+The encoder layer (attention block plus feed-forward block with optional normalization and residual connections) and the per-token classification head SHALL be importable, reusable modules that depend on no task-specific code. Each task model file SHALL contain only its task-specific input representation and thin composition of the shared pieces. A task model SHALL accept caller-supplied, already-constructed attention and feed-forward modules and SHALL pass those constructed modules into each of its encoder layers. The task model SHALL NOT resolve, select, validate, or construct an attention architecture or a feed-forward variant itself.
 
 #### Scenario: Shared scaffolding is task-agnostic
 - **WHEN** the shared encoder-layer and classification-head modules are imported from the repository root and their imports are inspected
@@ -26,11 +15,11 @@ The encoder layer (attention block plus feed-forward block with optional normali
 
 #### Scenario: Task file is thin glue
 - **WHEN** a task model file under the model layer is inspected
-- **THEN** it defines (or imports) only its task-specific embedding and composes the shared encoder layer and shared head, obtaining attention solely from the caller-supplied attention module and defining no encoder or head of its own
+- **THEN** it defines (or imports) only its task-specific embedding and composes the shared encoder layer and shared head, obtaining attention and feed-forward solely from the caller-supplied modules and defining no encoder or head of its own
 
 #### Scenario: Task model constructs the attention it selected
-- **WHEN** a task model is constructed with a caller-supplied, already-constructed attention module and the resulting encoder stack is inspected
-- **THEN** each encoder layer's attention is that supplied module, and the task model's public construction surface takes attention as a constructed module rather than as an architecture name or a factory
+- **WHEN** a task model is constructed with caller-supplied, already-constructed attention and feed-forward modules and the resulting encoder stack is inspected
+- **THEN** each encoder layer's attention is that supplied attention module and its feed-forward is that supplied feed-forward module, and the task model's public construction surface takes attention and feed-forward as constructed modules rather than as names, variants, or factories
 
 ### Requirement: Task models accept a caller-supplied attention module
 A task model SHALL accept a caller-supplied, already-constructed attention module and SHALL use that same module as the attention of every encoder layer it composes, so the module and its parameters are shared across the layers. The task model SHALL NOT restrict which attention may be supplied, SHALL NOT perform any name-based allow-list or validation, and SHALL use exactly the module supplied. Which architectures a particular study compares SHALL be decided by the calling notebook or experiment configuration, not restricted inside the task model.
@@ -116,15 +105,15 @@ The fuzzy-logic and Match3 task models SHALL construct their attention without d
 - **THEN** each still returns per-layer weights of shape `(batch, num_heads, length, length)`
 
 ### Requirement: Documentation matches the model-layer layout
-`AGENTS.md` and the root `README.md` SHALL describe the model layer's organization: where attention architectures and their individual classes live, where shared scaffolding lives, and the convention for adding a task (task-specific embedding plus thin task file), including that callers construct attention directly with no name-to-architecture registry and no construction helper. Every model-layer path they document SHALL exist.
+`AGENTS.md` and the root `README.md` SHALL describe the model layer's organization: where attention architectures and their individual classes live, where shared scaffolding lives, and the convention for adding a task (task-specific embedding plus thin task file plus a config/factory branch), including that the model layer exposes a config-driven model factory whose architecture and feed-forward selection is by typed enum (never a raw string). Every model-layer path they document SHALL exist.
 
 #### Scenario: Documented model-layer paths exist
 - **WHEN** every repository-relative path mentioned for the model layer in `AGENTS.md` and `README.md` is checked against the filesystem
 - **THEN** each path exists in the documented form, and the add-a-task convention matches the actual directory structure
 
 #### Scenario: Documentation describes direct attention construction
-- **WHEN** `AGENTS.md` and the root `README.md` are inspected for how attention is selected
-- **THEN** they describe callers importing and constructing attention classes directly, and mention no name-to-architecture registry or attention construction helper
+- **WHEN** `AGENTS.md` and the root `README.md` are inspected for how attention and feed-forward are selected
+- **THEN** they describe a config-driven model factory selecting architectures by typed enum, and mention no string-keyed architecture registry or raw-string construction helper
 
 ### Requirement: Reusable model blocks and fixed positional encoding
 The model layer SHALL provide reusable, task-agnostic blocks that compose into full sequence models: a fixed absolute positional encoding block that produces a deterministic position vector for each sequence position, feed-forward block support for both the existing residual ReLU stack and a two-projection GELU residual block, and a regression head that maps token hidden states to a scalar prediction after a final normalization. The model layer SHALL NOT provide a relative-position bias block.
@@ -149,15 +138,15 @@ The sequence-composable attention architectures provided by the model layer (sof
 - **THEN** the resulting attention weights differ and keep the same shape
 
 ### Requirement: Fuzzy-logic regression task model
-The model layer SHALL provide a fuzzy-logic regression task model that composes a task-specific input embedding, a configurable stack of encoder layers whose attention comes from a caller-supplied, already-constructed attention module shared across the stack, and the regression head, and SHALL accept any attention module a caller supplies. The task-specific input embedding SHALL add a fixed absolute positional encoding to its projected token representations.
+The model layer SHALL provide a fuzzy-logic regression task model that composes a task-specific input embedding, a configurable stack of encoder layers whose attention and feed-forward come from caller-supplied, already-constructed modules shared across the stack, and the regression head, and SHALL accept any attention and feed-forward module a caller supplies. The task-specific input embedding SHALL add a fixed absolute positional encoding to its projected token representations.
 
 #### Scenario: Model reproduces the reference architecture
-- **WHEN** the fuzzy-logic task model is constructed with an attention module configured for the reference (8 heads, query/key and value width 16) and the reference task configuration (two layers, hidden width 128, feed-forward width 256, fixed absolute positional encoding, GELU feed-forward)
+- **WHEN** the fuzzy-logic task model is constructed with a supplied attention module configured for the reference (8 heads, query/key and value width 16), a supplied GELU feed-forward module, and the reference task configuration (two layers, hidden width 128, feed-forward width 256, fixed absolute positional encoding)
 - **THEN** it produces per-token scalar predictions and exposes one attention-weight matrix per layer
 
 #### Scenario: Registered architectures are accepted
-- **WHEN** the fuzzy-logic task model is constructed with a supplied attention module for each provided sequence-composable attention architecture
-- **THEN** every construction succeeds and the selected architecture appears in the encoder stack
+- **WHEN** the fuzzy-logic task model is constructed with supplied attention and feed-forward modules for each provided sequence-composable attention architecture and each supported feed-forward variant
+- **THEN** every construction succeeds and the selected architecture and variant appear in the encoder stack
 
 #### Scenario: Unknown architecture name is rejected
 - **WHEN** the fuzzy-logic task model is constructed with an architecture name string instead of an attention module
@@ -247,19 +236,19 @@ The encoder layer SHALL apply no dropout to its residual paths: its attention an
 - **THEN** that dropout is applied inside the block and the encoder layer holds no dropout module
 
 ### Requirement: Feed-forward variants are constructible modules
-The model layer SHALL provide the residual ReLU-stack feed-forward and the two-projection GELU feed-forward as constructible modules that a task model instantiates directly and passes into each encoder layer. The model layer SHALL NOT provide a name-keyed feed-forward factory, and there SHALL be no feed-forward variant-name mapping or lookup.
+The model layer SHALL provide the residual ReLU-stack feed-forward and the two-projection GELU feed-forward as constructible modules. The model factory SHALL select the variant from a typed `FeedForwardVariant` enum carried in a model config and construct the corresponding module, which the task model passes into each encoder layer. The model layer SHALL NOT provide a raw-string-keyed feed-forward factory, and there SHALL be no feed-forward variant-name (string) mapping or lookup. Direct construction of a feed-forward class by an explicit caller SHALL remain possible.
 
 #### Scenario: Both variants forward at unchanged width
 - **WHEN** a feed-forward module is constructed for each supported variant and applied to a hidden state
 - **THEN** each returns a tensor of the same shape as its input
 
 #### Scenario: Task model constructs the feed-forward directly
-- **WHEN** a task model is constructed and its encoder stack is inspected
-- **THEN** each encoder layer's feed-forward is a directly instantiated module of the variant the task needs, constructed without a name-to-module factory
+- **WHEN** a model is built through the factory with a feed-forward variant selected by a `FeedForwardVariant` enum member and its encoder stack is inspected
+- **THEN** each encoder layer's feed-forward is a directly instantiated module of that variant, constructed without a string-keyed name-to-module factory
 
 #### Scenario: No feed-forward factory is exposed
-- **WHEN** the model layer's feed-forward module is searched for a name-to-module construction function
-- **THEN** no such factory exists and no feed-forward variant-name lookup is performed
+- **WHEN** the model layer's feed-forward module is searched for a string-keyed name-to-module construction function
+- **THEN** no such string-keyed factory exists and no feed-forward variant is selected by a raw string
 
 ### Requirement: Classification head returns probabilities
 The per-token binary classification head SHALL apply a sigmoid to its single output logit and return per-token probabilities bounded within the closed interval `[0, 1]`, rather than raw logits. (Sigmoid is mathematically interior to `(0, 1)`; in floating point it may round to the endpoints for large-magnitude logits.) The sigmoid SHALL be part of the classification head and SHALL NOT be applied again by any task model that composes it. Because the head exposes probabilities and not logits, binary-classification training SHALL consume the head output with a binary cross-entropy objective that expects probabilities. The scalar regression head SHALL remain unchanged and SHALL NOT apply a sigmoid to its output.
@@ -275,3 +264,52 @@ The per-token binary classification head SHALL apply a sigmoid to its single out
 #### Scenario: Regression head is unaffected
 - **WHEN** the scalar regression head is applied to hidden states
 - **THEN** it returns one scalar per token whose values are not constrained to `(0, 1)`
+
+### Requirement: Config-driven model factory
+The model layer SHALL provide a model factory that accepts a single configuration object and returns a fully constructed task model, without the caller constructing the attention module, feed-forward module, embedding, or head. The factory SHALL construct the attention module and feed-forward module from the configuration, build the task-specific embedding and head, apply the task model's single initialization policy, and return the composed task model. The factory SHALL support the Match3 classifier task model and the fuzzy-logic regression task model. Adding a task SHALL require adding its configuration type and its factory branch rather than editing the existing task branches.
+
+#### Scenario: Factory builds a Match3 model
+- **WHEN** the factory is given a Match3 configuration
+- **THEN** it returns a constructed Match3 task model whose encoder layers use the configured attention and feed-forward
+
+#### Scenario: Factory builds a fuzzy-logic model
+- **WHEN** the factory is given a fuzzy-logic configuration
+- **THEN** it returns a constructed fuzzy-logic task model whose encoder layers use the configured attention and feed-forward
+
+#### Scenario: Returned model is ready to run
+- **WHEN** the factory returns a model
+- **THEN** the model is a `torch.nn.Module` with all sub-modules constructed and initialized, usable in a forward pass without the caller supplying any sub-module
+
+#### Scenario: Factory construction matches direct construction
+- **WHEN** a model is built through the factory from a configuration and the same architecture is constructed directly with equivalent arguments
+- **THEN** the two models expose the same architecture configuration (stack depth, widths, head count, attention architecture, feed-forward variant)
+
+### Requirement: Typed enum architecture selection
+Attention architecture selection and feed-forward variant selection in a model config SHALL use typed enum members defined by the model layer (`AttentionArchitecture` and `FeedForwardVariant`). The factory SHALL map each enum member to its concrete class. A raw string SHALL NOT be accepted or used to select an attention architecture or a feed-forward variant anywhere in the model layer.
+
+#### Scenario: Each attention architecture is selectable by enum
+- **WHEN** the factory is given a configuration selecting each supported sequence-composable attention architecture by enum member
+- **THEN** construction succeeds and the resulting model's encoder stack uses that attention architecture
+
+#### Scenario: Raw string is not accepted as a selector
+- **WHEN** a configuration or factory call supplies an attention architecture or feed-forward variant as a raw string instead of an enum member
+- **THEN** selection fails rather than silently resolving a string name
+
+#### Scenario: Each feed-forward variant is selectable by enum
+- **WHEN** the factory is given a configuration selecting each supported feed-forward variant by enum member
+- **THEN** construction succeeds and the resulting model's encoder layers use that variant
+
+### Requirement: Per-task model configuration
+The model layer SHALL provide a configuration type for each task model it builds (a Match3 configuration and a fuzzy-logic configuration). Each configuration SHALL expose the model's variation knobs: the attention architecture and head dimensions (head count plus independently configurable query/key and value head dimensions), the feed-forward variant with its width or depth, the stack size and shape (number of layers and hidden width), regularization and layer-sharing settings (feed-forward dropout, normalization, layer sharing where the task supports it), and the task model's initialization policy. The configuration's type SHALL determine which task model is built; no separate task-type field SHALL be required.
+
+#### Scenario: Knobs drive the built model
+- **WHEN** a configuration supplies a value for each of its variation knobs and the model is built through the factory
+- **THEN** the resulting model reflects every supplied value (stack depth and width, attention architecture and head dimensions, feed-forward variant and width/depth, dropout, normalization, layer sharing)
+
+#### Scenario: Configuration type selects the task
+- **WHEN** a Match3 configuration and a fuzzy-logic configuration are each passed to the factory
+- **THEN** the factory builds the corresponding task model without a task-type string being supplied
+
+#### Scenario: Initialization policy is carried as a class
+- **WHEN** a configuration supplies its initialization policy
+- **THEN** the policy is a `WeightInitializer` subclass applied by the built model, and no string identifies or selects the scheme
